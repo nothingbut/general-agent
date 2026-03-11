@@ -49,7 +49,10 @@ impl ProgressEstimator {
         // Cap at 95% until completion
         self.current_progress = self.current_progress.min(0.95).max(0.0);
 
-        // Store in history
+        // Bound history size to prevent memory leak (keep last 10 entries)
+        if self.message_history.len() >= 10 {
+            self.message_history.remove(0);
+        }
         self.message_history.push((message_count, elapsed));
     }
 
@@ -60,8 +63,8 @@ impl ProgressEstimator {
 
     /// Estimate remaining time
     pub fn estimate_remaining(&self) -> Option<Duration> {
-        // Need at least 5% progress to estimate
-        if self.current_progress <= 0.05 {
+        // Guard against empty history and insufficient progress
+        if self.current_progress <= 0.05 || self.message_history.is_empty() {
             return None;
         }
 
