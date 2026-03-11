@@ -25,6 +25,8 @@ uuid = { version = "1", features = ["v4"] }
 
 # 序列化
 serde = { version = "1", features = ["derive"] }
+dashmap = "6.1.0"
+thiserror.workspace = true
 
 [features]
 default = []
