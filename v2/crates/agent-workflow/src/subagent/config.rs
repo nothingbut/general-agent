@@ -1,5 +1,7 @@
 //! Configuration structures for subagent system
 
+use crate::subagent::error::SubagentResult;
+use crate::subagent::SubagentError;
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 use std::time::Duration;
@@ -63,12 +65,58 @@ impl TaskComplexity {
 }
 
 /// LLM configuration
+///
+/// Valid ranges:
+/// - `temperature`: 0.0 to 2.0 (controls randomness in LLM output)
+/// - `max_tokens`: must be greater than 0 (maximum tokens to generate)
+/// - `provider`: cannot be empty
+/// - `model`: cannot be empty
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct LLMConfig {
     pub provider: String,
     pub model: String,
     pub max_tokens: usize,
     pub temperature: f32,
+}
+
+impl LLMConfig {
+    /// Validates the LLM configuration
+    ///
+    /// # Errors
+    ///
+    /// Returns `SubagentError::ConfigError` if:
+    /// - `temperature` is not in the range [0.0, 2.0]
+    /// - `max_tokens` is 0
+    /// - `provider` is empty
+    /// - `model` is empty
+    pub fn validate(&self) -> SubagentResult<()> {
+        if self.temperature < 0.0 || self.temperature > 2.0 {
+            return Err(SubagentError::ConfigError(format!(
+                "Temperature must be between 0.0 and 2.0, got {}",
+                self.temperature
+            )));
+        }
+
+        if self.max_tokens == 0 {
+            return Err(SubagentError::ConfigError(
+                "max_tokens must be greater than 0".to_string(),
+            ));
+        }
+
+        if self.provider.is_empty() {
+            return Err(SubagentError::ConfigError(
+                "provider cannot be empty".to_string(),
+            ));
+        }
+
+        if self.model.is_empty() {
+            return Err(SubagentError::ConfigError(
+                "model cannot be empty".to_string(),
+            ));
+        }
+
+        Ok(())
+    }
 }
 
 impl Default for LLMConfig {
@@ -102,7 +150,7 @@ pub struct SubagentConfig {
 }
 
 /// Subagent task configuration
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct SubagentTaskConfig {
     pub id: Uuid,
     pub config: SubagentConfig,
@@ -130,7 +178,7 @@ pub enum FailureStrategy {
 }
 
 /// Stage configuration
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct Stage {
     pub id: String,
     pub name: String,
