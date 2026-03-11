@@ -66,15 +66,76 @@ impl SubagentOrchestrator {
         self.active_count.load(Ordering::SeqCst)
     }
 
-    /// Check concurrent limit
-    pub async fn check_concurrent_limit(&self, new_tasks: usize) -> SubagentResult<()> {
+    /// Check concurrent limit (read-only validation, doesn't reserve slots)
+    pub fn check_concurrent_limit(&self, new_tasks: usize) -> SubagentResult<()> {
         let current = self.active_count();
-        if current + new_tasks > self.config.max_concurrent_subagents {
+        let total = current
+            .checked_add(new_tasks)
+            .ok_or_else(|| SubagentError::ConfigError("Task count overflow".to_string()))?;
+
+        if total > self.config.max_concurrent_subagents {
             return Err(SubagentError::TooManyConcurrentSubagents {
                 limit: self.config.max_concurrent_subagents,
             });
         }
         Ok(())
+    }
+
+    /// Atomically reserve slots for new tasks
+    /// Returns Ok if reservation succeeded, Err if would exceed limit
+    pub fn try_reserve_slots(&self, count: usize) -> SubagentResult<()> {
+        let mut current = self.active_count.load(Ordering::Acquire);
+        loop {
+            let new_total = current
+                .checked_add(count)
+                .ok_or_else(|| SubagentError::ConfigError("Task count overflow".to_string()))?;
+
+            if new_total > self.config.max_concurrent_subagents {
+                return Err(SubagentError::TooManyConcurrentSubagents {
+                    limit: self.config.max_concurrent_subagents,
+                });
+            }
+
+            match self.active_count.compare_exchange_weak(
+                current,
+                new_total,
+                Ordering::AcqRel,
+                Ordering::Acquire,
+            ) {
+                Ok(_) => return Ok(()),
+                Err(actual) => current = actual, // Retry with updated value
+            }
+        }
+    }
+
+    /// Release reserved slots when tasks complete
+    pub fn release_slots(&self, count: usize) {
+        self.active_count.fetch_sub(count, Ordering::Release);
+    }
+
+    /// Take the command receiver (can only be called once)
+    pub fn take_command_rx(&mut self) -> Option<mpsc::Receiver<SubagentCommand>> {
+        self.command_rx.take()
+    }
+
+    /// Take the result receiver (can only be called once)
+    pub fn take_result_rx(&mut self) -> Option<mpsc::Receiver<TaskResult>> {
+        self.result_rx.take()
+    }
+
+    /// Get command sender clone
+    pub fn command_tx(&self) -> mpsc::Sender<SubagentCommand> {
+        self.command_tx.clone()
+    }
+
+    /// Get result sender clone
+    pub fn result_tx(&self) -> mpsc::Sender<TaskResult> {
+        self.result_tx.clone()
+    }
+
+    /// Subscribe to shutdown notifications
+    pub fn subscribe_shutdown(&self) -> broadcast::Receiver<()> {
+        self.shutdown_tx.subscribe()
     }
 
     /// Get state map reference
