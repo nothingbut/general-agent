@@ -189,5 +189,5 @@ async def test_display_summary(monitor):
     dashboard = MonitoringDashboard(monitor)
 
     # 这个测试主要验证不抛出异常
-    dashboard.display_summary("wf-test-summary")
+    await dashboard.display_summary("wf-test-summary")
     assert True
