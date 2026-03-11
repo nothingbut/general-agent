@@ -23,6 +23,9 @@ tracing = "0.1"
 # UUID
 uuid = { version = "1", features = ["v4"] }
 
+# 时间处理
+chrono = { version = "0.4", features = ["serde"] }
+
 # 序列化
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"
