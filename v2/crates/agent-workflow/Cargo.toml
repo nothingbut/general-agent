@@ -17,16 +17,27 @@ tokio = { version = "1", features = ["full"] }
 # Trait 支持
 async-trait = "0.1"
 
+# 并发数据结构
+dashmap = "5.5"
+
 # 日志
 tracing = "0.1"
 
 # UUID
 uuid = { version = "1", features = ["v4"] }
 
+# 时间处理
+chrono = { version = "0.4", features = ["serde"] }
+
 # 序列化
 serde = { version = "1", features = ["derive"] }
-dashmap = "6.1.0"
-thiserror.workspace = true
+serde_json = "1"
+
+# 错误处理
+thiserror = { workspace = true }
+
+# 数据库 (用于错误转换)
+sqlx = { workspace = true }
 
 [features]
 default = []
@@ -35,4 +46,4 @@ rag = ["dep:agent-rag"]
 
 [dev-dependencies]
 tokio-test = "0.4"
-serde_json = "1"
+sqlx = { workspace = true }
