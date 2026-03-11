@@ -3,7 +3,7 @@
 use serde::{Deserialize, Serialize};
 
 /// Type of session (main or subagent)
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
 pub enum SessionType {
     /// Main agent session
     Main,
@@ -12,9 +12,10 @@ pub enum SessionType {
 }
 
 /// Status of a session
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Default, Serialize, Deserialize)]
 pub enum SessionStatus {
     /// Session is idle, waiting to start
+    #[default]
     Idle,
     /// Session is currently running
     Running,
@@ -24,10 +25,4 @@ pub enum SessionStatus {
     Failed,
     /// Session was cancelled
     Cancelled,
-}
-
-impl Default for SessionStatus {
-    fn default() -> Self {
-        Self::Idle
-    }
 }
