@@ -54,7 +54,7 @@ impl SubagentTask {
 
         // Simulate task execution
         let final_state = self.state.get(&self.session_id)
-            .unwrap()
+            .ok_or(super::error::SubagentError::ConfigError("State not found".to_string()))?
             .clone()
             .with_status(SessionStatus::Completed);
         self.state.insert(self.session_id, final_state);
