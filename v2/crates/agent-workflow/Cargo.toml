@@ -25,6 +25,13 @@ uuid = { version = "1", features = ["v4"] }
 
 # 序列化
 serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+
+# 错误处理
+thiserror = { workspace = true }
+
+# 数据库 (用于错误转换)
+sqlx = { workspace = true }
 
 [features]
 default = []
@@ -34,3 +41,4 @@ rag = ["dep:agent-rag"]
 [dev-dependencies]
 tokio-test = "0.4"
 serde_json = "1"
+sqlx = { workspace = true }

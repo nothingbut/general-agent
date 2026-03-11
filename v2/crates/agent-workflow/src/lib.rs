@@ -4,6 +4,7 @@
 
 pub mod conversation_flow;
 pub mod session_manager;
+pub mod subagent;
 
 pub use conversation_flow::{ConversationConfig, ConversationFlow, StreamContext};
 pub use session_manager::SessionManager;
