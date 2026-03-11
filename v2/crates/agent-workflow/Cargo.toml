@@ -17,6 +17,9 @@ tokio = { version = "1", features = ["full"] }
 # Trait 支持
 async-trait = "0.1"
 
+# 并发数据结构
+dashmap = "5.5"
+
 # 日志
 tracing = "0.1"
 
