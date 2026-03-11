@@ -51,3 +51,25 @@ fn test_subagent_result_err() {
     let result: SubagentResult<i32> = Err(SubagentError::ShutdownRequested);
     assert!(result.is_err());
 }
+
+#[test]
+fn test_error_conversion_from_serde_json() {
+    // Create a serde_json error by attempting to parse invalid JSON
+    let json_error = serde_json::from_str::<serde_json::Value>("invalid json")
+        .unwrap_err();
+    let subagent_error: SubagentError = json_error.into();
+
+    match subagent_error {
+        SubagentError::SerializationError(_) => {
+            // Expected conversion
+        }
+        _ => panic!("Expected SerializationError variant"),
+    }
+}
+
+#[test]
+fn test_subagent_error_is_send_sync() {
+    // Compile-time assertion that SubagentError implements Send + Sync
+    fn assert_send_sync<T: Send + Sync>() {}
+    assert_send_sync::<SubagentError>();
+}
