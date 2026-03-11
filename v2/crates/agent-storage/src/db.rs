@@ -136,7 +136,7 @@ mod tests {
             .await
             .unwrap();
 
-        assert!(result.0 >= 2); // 至少有 sessions 和 messages 表
+        assert!(result.0 >= 4); // 至少有 sessions, messages, subagent_sessions, stages 表
     }
 
     #[tokio::test]
