@@ -1,0 +1,24 @@
+[package]
+name = "agent-rag"
+version.workspace = true
+edition.workspace = true
+
+[dependencies]
+agent-core = { path = "../agent-core" }
+agent-llm = { path = "../agent-llm" }
+tokio = { workspace = true, features = ["fs"] }
+serde = { workspace = true }
+serde_json = { workspace = true }
+async-trait = { workspace = true }
+thiserror = { workspace = true }
+tracing = { workspace = true }
+reqwest = { workspace = true }
+uuid = { version = "1.6", features = ["v4"] }
+
+# Qdrant 客户端
+qdrant-client = "1.7"
+
+[dev-dependencies]
+tokio = { workspace = true, features = ["test-util", "macros", "fs"] }
+tempfile = "3.8"
+uuid = { version = "1.6", features = ["v4"] }

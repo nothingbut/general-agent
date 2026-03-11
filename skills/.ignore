@@ -1,0 +1,28 @@
+# Skill Ignore Patterns
+# Use gitignore-style patterns to exclude files from skill loading
+
+# Ignore draft skills
+draft-*.md
+**/draft-*.md
+*-draft.md
+**/*-draft.md
+
+# Ignore test/example files
+**/test-*.md
+**/example-*.md
+
+# Ignore template files
+**/template.md
+**/_template.md
+
+# Ignore README files
+README.md
+**/README.md
+
+# Ignore hidden files
+**/.*
+
+# Ignore backup files
+**/*.bak
+**/*.backup
+**/*~

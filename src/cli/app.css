@@ -1,0 +1,33 @@
+/* TUI Application Styles */
+
+Screen {
+    background: $surface;
+}
+
+Header {
+    dock: top;
+    height: 3;
+    background: $primary;
+    color: $text;
+    content-align: center middle;
+}
+
+Footer {
+    dock: bottom;
+    height: 1;
+    background: $panel;
+}
+
+#input {
+    dock: bottom;
+    height: 3;
+    border: solid $primary;
+}
+
+#input:focus {
+    border: solid $accent;
+}
+
+#messages {
+    height: 1fr;
+}

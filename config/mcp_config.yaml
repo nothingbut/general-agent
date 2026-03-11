@@ -1,0 +1,63 @@
+# MCP Server Configuration
+
+servers:
+  # Filesystem MCP server
+  filesystem:
+    # Server startup command
+    command: npx
+    args:
+      - "-y"
+      - "@modelcontextprotocol/server-filesystem"
+      - "/Users/shichang"  # MCP server root (our whitelist restricts further)
+
+    # Security configuration
+    security:
+      # Allowed directories (whitelist)
+      allowed_directories:
+        - /tmp
+        - /private/tmp
+        - /Users/shichang/Documents
+        - /Users/shichang/Downloads
+        - /Users/shichang/Workspace
+
+      # Operations allowed without confirmation
+      allowed_operations:
+        - read_file
+        - list_directory
+        - get_file_info
+
+      # Operations always denied
+      denied_operations:
+        - delete_file
+        - delete_directory
+
+      # Operations not listed require user confirmation:
+      # - write_file
+      # - create_directory
+      # - move_file
+
+    # Optional settings
+    env: {}
+    timeout: 30.0
+    health_check_interval: 60
+
+  # Future servers (Phase 4+)
+  # github:
+  #   command: npx
+  #   args: ["-y", "@modelcontextprotocol/server-github"]
+  #   env:
+  #     GITHUB_TOKEN: ${GITHUB_TOKEN}
+  #   security:
+  #     allowed_operations: [search_repositories, get_file_contents]
+  #     denied_operations: [delete_repository]
+
+# Global configuration
+global:
+  # Enable/disable MCP (can override with MCP_ENABLED env var)
+  enabled: true
+
+  # Audit log retention
+  audit_log_retention_days: 90
+
+  # Confirmation timeout
+  confirmation_timeout: 300

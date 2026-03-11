@@ -1,0 +1,32 @@
+[package]
+name = "agent-cli"
+version.workspace = true
+edition.workspace = true
+
+[[bin]]
+name = "agent"
+path = "src/main.rs"
+
+[dependencies]
+agent-core = { path = "../agent-core" }
+agent-storage = { path = "../agent-storage" }
+agent-llm = { path = "../agent-llm" }
+agent-workflow = { path = "../agent-workflow" }
+agent-skills = { path = "../agent-skills" }
+
+# CLI
+clap = { version = "4", features = ["derive", "env"] }
+colored = "2"
+
+# 异步
+tokio = { version = "1", features = ["full"] }
+
+# 日志
+tracing = "0.1"
+tracing-subscriber = { version = "0.3", features = ["env-filter"] }
+
+# 错误处理
+anyhow = "1"
+
+# UUID
+uuid = { version = "1", features = ["v4"] }

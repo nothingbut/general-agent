@@ -1,0 +1,75 @@
+[workspace]
+members = [
+    "crates/agent-core",
+    "crates/agent-storage",
+    "crates/agent-llm",
+    "crates/agent-skills",
+    "crates/agent-workflow",
+    "crates/agent-mcp",
+    "crates/agent-rag",
+    "crates/agent-api",
+    "crates/agent-tui",
+    "crates/agent-cli",
+]
+resolver = "2"
+
+[workspace.package]
+version = "0.1.0"
+edition = "2021"
+authors = ["General Agent Team"]
+license = "MIT"
+repository = "https://github.com/your-org/general-agent-v2"
+
+[workspace.dependencies]
+# 异步运行时
+tokio = { version = "1.35", features = ["full"] }
+async-trait = "0.1"
+futures = "0.3"
+
+# Web 框架
+axum = "0.7"
+tower = "0.4"
+tower-http = { version = "0.5", features = ["trace", "cors"] }
+
+# 数据库
+sqlx = { version = "0.7", features = ["runtime-tokio-rustls", "sqlite", "migrate", "chrono", "uuid"] }
+
+# 序列化
+serde = { version = "1.0", features = ["derive"] }
+serde_json = "1.0"
+
+# UUID
+uuid = { version = "1.6", features = ["v4", "serde"] }
+
+# 时间
+chrono = { version = "0.4", features = ["serde"] }
+
+# 错误处理
+thiserror = "1.0"
+anyhow = "1.0"
+
+# 日志
+tracing = "0.1"
+tracing-subscriber = { version = "0.3", features = ["env-filter"] }
+
+# HTTP 客户端
+reqwest = { version = "0.11", features = ["json"] }
+
+# 配置
+config = "0.14"
+
+# TUI
+ratatui = "0.26"
+crossterm = "0.27"
+
+# LLM
+async-openai = "0.18"
+
+# 测试
+mockito = "1.2"
+
+[profile.release]
+opt-level = 3
+lto = "fat"
+codegen-units = 1
+strip = true

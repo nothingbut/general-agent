@@ -1,0 +1,31 @@
+# General Agent 配置文件
+
+# LLM 配置
+llm:
+  provider: "ollama"  # 可选: ollama, openai, anthropic
+
+  # Ollama 配置
+  ollama:
+    base_url: "http://localhost:11434"  # Ollama 默认地址
+    model: "qwen3.5:2b"  # 你的模型名称，改成你用的模型
+    # 其他常用模型: llama3.2, mistral, qwen2.5:14b 等
+    timeout: 120  # 超时时间（秒）
+
+  # OpenAI 配置（备用）
+  openai:
+    api_key: ""  # 留空或填入你的 key
+    model: "gpt-3.5-turbo"
+    base_url: ""  # 可选，使用代理时填写
+
+# 数据库配置
+database:
+  path: "~/.local/share/general-agent/agent.db"
+
+# MCP 配置
+mcp:
+  config_path: "~/.config/general-agent/mcp-servers.json"
+
+# RAG 配置
+rag:
+  vector_store: "faiss"
+  embedding_model: "sentence-transformers/all-MiniLM-L6-v2"

@@ -1,0 +1,31 @@
+[package]
+name = "agent-tui"
+version.workspace = true
+edition.workspace = true
+
+[dependencies]
+# 核心依赖
+agent-core = { path = "../agent-core" }
+agent-workflow = { path = "../agent-workflow" }
+agent-storage = { path = "../agent-storage" }
+agent-llm = { path = "../agent-llm" }
+agent-skills = { path = "../agent-skills" }
+
+# TUI
+ratatui.workspace = true
+crossterm.workspace = true
+
+# 异步
+tokio.workspace = true
+futures.workspace = true
+
+# 工具
+uuid.workspace = true
+chrono.workspace = true
+anyhow.workspace = true
+thiserror.workspace = true
+tracing.workspace = true
+
+[dev-dependencies]
+tokio = { workspace = true, features = ["test-util"] }
+tracing-subscriber = { workspace = true }

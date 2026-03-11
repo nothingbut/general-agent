@@ -1,0 +1,36 @@
+[package]
+name = "agent-workflow"
+version.workspace = true
+edition.workspace = true
+
+[dependencies]
+agent-core = { path = "../agent-core" }
+agent-storage = { path = "../agent-storage" }
+agent-llm = { path = "../agent-llm" }
+agent-skills = { path = "../agent-skills" }
+agent-mcp = { path = "../agent-mcp", optional = true }
+agent-rag = { path = "../agent-rag", optional = true }
+
+# 异步运行时
+tokio = { version = "1", features = ["full"] }
+
+# Trait 支持
+async-trait = "0.1"
+
+# 日志
+tracing = "0.1"
+
+# UUID
+uuid = { version = "1", features = ["v4"] }
+
+# 序列化
+serde = { version = "1", features = ["derive"] }
+
+[features]
+default = []
+mcp = ["dep:agent-mcp"]
+rag = ["dep:agent-rag"]
+
+[dev-dependencies]
+tokio-test = "0.4"
+serde_json = "1"
