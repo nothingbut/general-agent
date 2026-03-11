@@ -1,61 +1,77 @@
-use chrono::{DateTime, Utc};
 use std::time::Duration;
 
 use super::config::TaskType;
 
-/// Progress estimation for subagent tasks
+/// Progress estimation for subagent tasks using weighted moving average
 pub struct ProgressEstimator {
     task_type: TaskType,
+    estimated_total_messages: usize,
+    current_progress: f32,
+    message_history: Vec<(usize, Duration)>,
+    alpha: f32, // EMA smoothing factor
 }
 
 impl ProgressEstimator {
     /// Create new progress estimator
     pub fn new(task_type: TaskType) -> Self {
-        Self { task_type }
-    }
-
-    /// Estimate progress based on message count (0.0 - 1.0)
-    pub fn estimate_progress(&self, message_count: usize) -> f32 {
-        // Select estimated total based on task type
-        let estimated_total: f32 = match self.task_type {
-            TaskType::CodeReview => 50.0,
-            TaskType::Research => 150.0,
-            TaskType::Analysis => 100.0,
-            TaskType::Documentation => 80.0,
-            TaskType::Testing => 120.0,
-            TaskType::Custom => 100.0,
+        let estimated_total_messages = match task_type {
+            TaskType::CodeReview => 50,
+            TaskType::Research => 150,
+            TaskType::Analysis => 100,
+            TaskType::Documentation => 80,
+            TaskType::Testing => 120,
+            TaskType::Custom => 100,
         };
 
-        // Use sigmoid-like curve for more realistic progress
-        // Progress is slower at the beginning and end, faster in the middle
-        let ratio = message_count as f32 / estimated_total;
+        Self {
+            task_type,
+            estimated_total_messages,
+            current_progress: 0.0,
+            message_history: Vec::new(),
+            alpha: 0.3, // Gives more weight to recent measurements
+        }
+    }
 
-        // Apply sigmoid transformation: 1 / (1 + e^(-k*(x-0.5)))
-        // where k controls steepness (using 6.0 for moderate curve)
-        let k = 6.0;
-        let sigmoid = 1.0 / (1.0 + (-k * (ratio - 0.5)).exp());
+    /// Update progress using weighted moving average
+    pub fn update(&mut self, message_count: usize, elapsed: Duration) {
+        // Calculate raw progress
+        let raw_progress = (message_count as f32) / (self.estimated_total_messages as f32);
+
+        // If first update, set directly to avoid starting at 0
+        if self.message_history.is_empty() {
+            self.current_progress = raw_progress;
+        } else {
+            // Apply exponential moving average
+            // new_progress = alpha * raw + (1-alpha) * previous
+            self.current_progress = self.alpha * raw_progress + (1.0 - self.alpha) * self.current_progress;
+        }
 
         // Cap at 95% until completion
-        sigmoid.min(0.95).max(0.0)
+        self.current_progress = self.current_progress.min(0.95).max(0.0);
+
+        // Store in history
+        self.message_history.push((message_count, elapsed));
+    }
+
+    /// Get current progress (0.0 - 1.0)
+    pub fn get_progress(&self) -> f32 {
+        self.current_progress
     }
 
     /// Estimate remaining time
-    pub fn estimate_remaining_time(
-        &self,
-        current_progress: f32,
-        started_at: DateTime<Utc>,
-    ) -> Option<Duration> {
+    pub fn estimate_remaining(&self) -> Option<Duration> {
         // Need at least 5% progress to estimate
-        if current_progress <= 0.05 {
+        if self.current_progress <= 0.05 {
             return None;
         }
 
-        let elapsed = Utc::now() - started_at;
-        let elapsed_secs = elapsed.num_seconds() as f32;
+        // Get most recent elapsed time from history
+        let elapsed = self.message_history.last()?.1;
+        let elapsed_secs = elapsed.as_secs_f32();
 
         // Estimate total time based on current progress
-        let total_estimated = elapsed_secs / current_progress;
-        let remaining = total_estimated * (1.0 - current_progress);
+        let total_estimated = elapsed_secs / self.current_progress;
+        let remaining = total_estimated * (1.0 - self.current_progress);
 
         // Cap at 1 hour max
         let capped = remaining.min(3600.0).max(0.0);
@@ -70,13 +86,17 @@ mod tests {
 
     #[test]
     fn test_progress_bounds() {
-        let estimator = ProgressEstimator::new(TaskType::Analysis);
+        let mut estimator = ProgressEstimator::new(TaskType::Analysis);
 
-        // With sigmoid curve, 0 messages gives small non-zero value
-        let zero_progress = estimator.estimate_progress(0);
-        assert!(zero_progress < 0.1, "Expected small progress at 0 messages, got {}", zero_progress);
+        // Initial progress should be 0
+        assert_eq!(estimator.get_progress(), 0.0);
 
-        // Very high message count should cap at 95%
-        assert!(estimator.estimate_progress(1000) <= 0.95);
+        // After updates, should stay within bounds
+        estimator.update(10, Duration::from_secs(5));
+        assert!(estimator.get_progress() > 0.0);
+        assert!(estimator.get_progress() <= 0.95);
+
+        estimator.update(10000, Duration::from_secs(100));
+        assert!(estimator.get_progress() <= 0.95);
     }
 }
