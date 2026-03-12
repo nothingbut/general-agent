@@ -171,7 +171,7 @@ impl SubagentOrchestrator {
     /// - Too many concurrent subagents would be created
     /// - Task creation fails
     pub async fn create_and_execute_stage(
-        &mut self,
+        &self,
         parent_session_id: Uuid,
         tasks: Vec<String>,
         config: Option<SubagentConfig>,
@@ -198,6 +198,9 @@ impl SubagentOrchestrator {
 
         // Get result sender for tasks
         let result_tx = self.result_tx.clone();
+
+        // Clone active_count for slot release on task completion
+        let active_count = self.active_count.clone();
 
         // Create and spawn tasks
         for (idx, task_desc) in tasks.into_iter().enumerate() {
@@ -228,9 +231,29 @@ impl SubagentOrchestrator {
                 progress_estimator,
             );
 
+            // NOTE: There is a race condition window here:
+            // SubagentState is created inside SubagentTask::run() (task.rs:48-53),
+            // not before spawning. This means between tokio::spawn() and the state
+            // insertion in run(), get_subagent_states() may return incomplete results.
+            // TODO: In a future task, refactor to create state here before spawning
+            // to eliminate this race condition window.
+
             let result_tx_clone = result_tx.clone();
+            let active_count_clone = active_count.clone();
             tokio::spawn(async move {
-                let _ = task.run(result_tx_clone).await;
+                let result = task.run(result_tx_clone).await;
+
+                // Always release slot when task completes (success or failure)
+                active_count_clone.fetch_sub(1, Ordering::Release);
+
+                // Log errors without swallowing them
+                if let Err(e) = result {
+                    tracing::error!(
+                        session_id = %session_id,
+                        error = %e,
+                        "SubagentTask execution failed"
+                    );
+                }
             });
         }
 

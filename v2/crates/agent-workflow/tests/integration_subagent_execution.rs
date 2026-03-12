@@ -16,7 +16,7 @@ async fn setup_test_environment() -> (Database, SubagentOrchestrator) {
 
 #[tokio::test]
 async fn test_create_and_execute_stage() {
-    let (_db, mut orchestrator) = setup_test_environment().await;
+    let (_db, orchestrator) = setup_test_environment().await;
     let parent_session_id = Uuid::new_v4();
 
     let tasks = vec![
@@ -50,7 +50,7 @@ async fn test_create_and_execute_stage() {
 
 #[tokio::test]
 async fn test_concurrent_limit_enforcement() {
-    let (_db, mut orchestrator) = setup_test_environment().await;
+    let (_db, orchestrator) = setup_test_environment().await;
     let parent_session_id = Uuid::new_v4();
 
     let tasks: Vec<String> = (0..15)
@@ -62,4 +62,27 @@ async fn test_concurrent_limit_enforcement() {
         .await;
 
     assert!(result.is_err());
+}
+
+#[tokio::test]
+async fn test_slot_release_after_completion() {
+    let (_db, orchestrator) = setup_test_environment().await;
+    let parent_session_id = Uuid::new_v4();
+
+    let tasks = vec!["任务1".to_string(), "任务2".to_string()];
+
+    // Create and execute stage
+    let _stage_id = orchestrator
+        .create_and_execute_stage(parent_session_id, tasks, None)
+        .await
+        .unwrap();
+
+    // Immediately after spawning, active_count should be 2
+    assert_eq!(orchestrator.active_count(), 2);
+
+    // Wait for tasks to complete (SubagentTask::run is very fast - just inserts state)
+    tokio::time::sleep(Duration::from_millis(200)).await;
+
+    // After completion, slots should be released (active_count back to 0)
+    assert_eq!(orchestrator.active_count(), 0);
 }
