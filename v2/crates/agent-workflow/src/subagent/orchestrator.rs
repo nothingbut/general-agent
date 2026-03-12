@@ -7,8 +7,11 @@ use tokio::sync::{broadcast, mpsc};
 use uuid::Uuid;
 
 use super::channels::{SubagentCommand, TaskResult};
+use super::config::{SubagentConfig, SubagentTaskConfig, TaskType};
 use super::error::{SubagentError, SubagentResult};
+use super::progress::ProgressEstimator;
 use super::state::SubagentState;
+use super::task::SubagentTask;
 
 /// Orchestrator configuration
 #[derive(Debug, Clone)]
@@ -38,6 +41,7 @@ pub struct SubagentOrchestrator {
     result_tx: mpsc::Sender<TaskResult>,
     result_rx: Option<mpsc::Receiver<TaskResult>>,
     shutdown_tx: broadcast::Sender<()>,
+    pool: Option<agent_storage::Database>,
 }
 
 impl SubagentOrchestrator {
@@ -58,7 +62,13 @@ impl SubagentOrchestrator {
             result_tx,
             result_rx: Some(result_rx),
             shutdown_tx,
+            pool: None,
         }
+    }
+
+    /// Set database pool for persistence
+    pub fn set_database_pool(&mut self, pool: agent_storage::Database) {
+        self.pool = Some(pool);
     }
 
     /// Get active subagent count
@@ -142,4 +152,153 @@ impl SubagentOrchestrator {
     pub fn state_map(&self) -> &Arc<DashMap<Uuid, SubagentState>> {
         &self.state_map
     }
+
+    /// Creates and executes a stage with multiple subagent tasks
+    ///
+    /// # Arguments
+    ///
+    /// * `parent_session_id` - ID of the parent session spawning these subagents
+    /// * `tasks` - List of task descriptions (one per subagent)
+    /// * `config` - Optional configuration (will use defaults if None)
+    ///
+    /// # Returns
+    ///
+    /// The stage UUID on success
+    ///
+    /// # Errors
+    ///
+    /// Returns error if:
+    /// - Too many concurrent subagents would be created
+    /// - Task creation fails
+    pub async fn create_and_execute_stage(
+        &mut self,
+        parent_session_id: Uuid,
+        tasks: Vec<String>,
+        config: Option<SubagentConfig>,
+    ) -> SubagentResult<Uuid> {
+        // Check concurrent limit
+        self.check_concurrent_limit(tasks.len())?;
+
+        // Reserve slots atomically
+        self.try_reserve_slots(tasks.len())?;
+
+        // Generate stage ID
+        let stage_id = Uuid::new_v4();
+        let stage_id_str = stage_id.to_string();
+
+        // Use provided config or default
+        let base_config = config.unwrap_or_else(|| SubagentConfig {
+            title: "Subagent Task".to_string(),
+            initial_prompt: String::new(),
+            shared_context: super::config::SharedContext::default(),
+            llm_config: super::config::LLMConfig::default(),
+            keep_alive: false,
+            timeout: None,
+        });
+
+        // Get result sender for tasks
+        let result_tx = self.result_tx.clone();
+
+        // Create and spawn tasks
+        for (idx, task_desc) in tasks.into_iter().enumerate() {
+            let session_id = Uuid::new_v4();
+
+            // Create task config
+            let mut task_config = base_config.clone();
+            task_config.title = format!("{} #{}", task_config.title, idx + 1);
+            task_config.initial_prompt = task_desc;
+
+            let subagent_task_config = SubagentTaskConfig {
+                id: session_id,
+                config: task_config,
+                parent_id: parent_session_id,
+                stage_id: stage_id_str.clone(),
+                priority: 0,
+                task_type: TaskType::Custom,
+            };
+
+            // Create progress estimator
+            let progress_estimator = ProgressEstimator::new(TaskType::Custom);
+
+            // Create and run task
+            let task = SubagentTask::new(
+                session_id,
+                subagent_task_config,
+                self.state_map.clone(),
+                progress_estimator,
+            );
+
+            let result_tx_clone = result_tx.clone();
+            tokio::spawn(async move {
+                let _ = task.run(result_tx_clone).await;
+            });
+        }
+
+        Ok(stage_id)
+    }
+
+    /// Get all subagent states for a given parent session
+    pub fn get_subagent_states(&self, parent_session_id: Uuid) -> Vec<SubagentState> {
+        self.state_map
+            .iter()
+            .filter(|entry| entry.value().parent_id() == parent_session_id)
+            .map(|entry| entry.value().clone())
+            .collect()
+    }
+
+    /// Get all states in the orchestrator
+    pub fn get_all_states(&self) -> Vec<SubagentState> {
+        self.state_map
+            .iter()
+            .map(|entry| entry.value().clone())
+            .collect()
+    }
+
+    /// Get statistics for a specific stage
+    pub fn get_stage_stats(&self, stage_id: &str) -> StageStats {
+        let states: Vec<_> = self
+            .state_map
+            .iter()
+            .filter(|entry| entry.value().stage_id() == stage_id)
+            .map(|entry| entry.value().clone())
+            .collect();
+
+        let total = states.len();
+        let completed = states
+            .iter()
+            .filter(|s| s.status() == super::models::SessionStatus::Completed)
+            .count();
+        let failed = states
+            .iter()
+            .filter(|s| s.status() == super::models::SessionStatus::Failed)
+            .count();
+        let running = states
+            .iter()
+            .filter(|s| s.status() == super::models::SessionStatus::Running)
+            .count();
+
+        let avg_progress = if total > 0 {
+            states.iter().map(|s| s.progress()).sum::<f32>() / total as f32
+        } else {
+            0.0
+        };
+
+        StageStats {
+            total,
+            completed,
+            failed,
+            running,
+            avg_progress,
+        }
+    }
+}
+
+/// Statistics for a stage
+#[derive(Debug, Clone)]
+pub struct StageStats {
+    pub total: usize,
+    pub completed: usize,
+    pub failed: usize,
+    pub running: usize,
+    pub avg_progress: f32,
 }

@@ -15,7 +15,7 @@ pub use channels::{ResultMetadata, SubagentCommand, TaskResult};
 pub use config::*;
 pub use error::{SubagentError, SubagentResult};
 pub use models::{SessionStatus, SessionType};
-pub use orchestrator::{OrchestratorConfig, SubagentOrchestrator};
+pub use orchestrator::{OrchestratorConfig, StageStats, SubagentOrchestrator};
 pub use progress::ProgressEstimator;
 pub use state::SubagentState;
 pub use task::SubagentTask;
