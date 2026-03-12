@@ -7,6 +7,15 @@
 
 ## 功能特性
 
+### Subagent System ✅
+- **并行任务执行**: `/subagent start "任务1" "任务2"` 启动独立子代理
+- **实时监控**: Ctrl+S 切换 Subagent Monitor overlay
+- **多视图模式**: Tab 在 CurrentSession 和 Global 视图间切换
+- **彩色状态指示**: Pending(黄)/Running(蓝)/Completed(绿)/Failed(红)
+- **键盘导航**: Up/Down 浏览列表，Esc 关闭
+
+详细文档见：[Subagent System 用户指南](docs/features/subagent-system.md)
+
 ### Phase 1: Foundation ✅
 - 基础聊天功能
 - 会话上下文管理
