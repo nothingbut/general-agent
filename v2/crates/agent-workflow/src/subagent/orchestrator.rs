@@ -345,7 +345,7 @@ impl SubagentOrchestrator {
         stage_id: &str,
         parent_session_id: Uuid,
         stage_name: &str,
-        _total_tasks: usize,
+        total_tasks: usize,
     ) -> SubagentResult<()> {
         let pool = self
             .pool
@@ -353,12 +353,13 @@ impl SubagentOrchestrator {
             .ok_or_else(|| SubagentError::ConfigError("Database pool not set".to_string()))?;
 
         sqlx::query(
-            "INSERT INTO stages (id, parent_session_id, name, status, created_at)
-             VALUES (?, ?, ?, 'Running', datetime('now'))"
+            "INSERT INTO stages (id, parent_session_id, name, status, created_at, total_tasks, completed_tasks)
+             VALUES (?, ?, ?, 'Running', datetime('now'), ?, 0)"
         )
         .bind(stage_id)
         .bind(parent_session_id.to_string())
         .bind(stage_name)
+        .bind(total_tasks as i64)
         .execute(pool.pool())
         .await?;
 

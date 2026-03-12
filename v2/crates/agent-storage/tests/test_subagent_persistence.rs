@@ -25,29 +25,28 @@ async fn test_save_stage() {
     .await
     .unwrap();
 
-    // Insert Stage record
+    // Insert Stage record with total_tasks=3
     let stage_id = "stage-123";
     let parent_session_id = "main-session-1";
     let stage_name = "Stage - 10:30:45";
+    let total_tasks = 3i64;
 
     sqlx::query(
-        "INSERT INTO stages (id, parent_session_id, name, status, created_at) VALUES (?, ?, ?, ?, datetime('now'))"
+        "INSERT INTO stages (id, parent_session_id, name, status, created_at, total_tasks, completed_tasks)
+         VALUES (?, ?, ?, 'Running', datetime('now'), ?, 0)"
     )
     .bind(stage_id)
     .bind(parent_session_id)
     .bind(stage_name)
-    .bind("Running")
+    .bind(total_tasks)
     .execute(db.pool())
     .await
     .unwrap();
 
-    // Query and verify stage data
-    let result: (String, String, i32) = sqlx::query_as(
-        "SELECT name, parent_session_id,
-         (SELECT COUNT(*) FROM subagent_sessions WHERE stage_id = ?) as total_tasks
-         FROM stages WHERE id = ?"
+    // Query and verify stage data (read total_tasks column)
+    let result: (String, String, i64) = sqlx::query_as(
+        "SELECT name, parent_session_id, total_tasks FROM stages WHERE id = ?"
     )
-    .bind(stage_id)
     .bind(stage_id)
     .fetch_one(db.pool())
     .await
@@ -55,9 +54,7 @@ async fn test_save_stage() {
 
     assert_eq!(result.0, stage_name);
     assert_eq!(result.1, parent_session_id);
-    // Note: total_tasks will be 0 initially since we haven't inserted subagent_sessions yet
-    // This is expected - we'll verify the count increases as subagents are added
-    assert_eq!(result.2, 0);
+    assert_eq!(result.2, 3); // Verify stored total_tasks value
 }
 
 #[tokio::test]
@@ -88,12 +85,12 @@ async fn test_save_subagent_session() {
     // Create Stage
     let stage_id = "stage-123";
     sqlx::query(
-        "INSERT INTO stages (id, parent_session_id, name, status, created_at) VALUES (?, ?, ?, ?, datetime('now'))"
+        "INSERT INTO stages (id, parent_session_id, name, status, created_at, total_tasks, completed_tasks)
+         VALUES (?, ?, ?, 'Running', datetime('now'), 1, 0)"
     )
     .bind(stage_id)
     .bind("main-session-1")
     .bind("Test Stage")
-    .bind("Running")
     .execute(db.pool())
     .await
     .unwrap();
