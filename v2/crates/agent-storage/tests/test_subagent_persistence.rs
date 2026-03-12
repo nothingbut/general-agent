@@ -151,3 +151,88 @@ async fn test_save_subagent_session() {
 
     assert_eq!(session_exists.0, 1);
 }
+
+#[tokio::test]
+async fn test_transaction_rollback_on_constraint_violation() {
+    // Create in-memory database and run migrations
+    let db = Database::in_memory().await.unwrap();
+    db.migrate().await.unwrap();
+
+    // Enable foreign keys
+    sqlx::query("PRAGMA foreign_keys = ON")
+        .execute(db.pool())
+        .await
+        .unwrap();
+
+    // Create main session (parent)
+    sqlx::query(
+        "INSERT INTO sessions (id, title, created_at, updated_at, context) VALUES (?, ?, ?, ?, ?)"
+    )
+    .bind("main-session-1")
+    .bind("Main Session")
+    .bind("2026-03-12T00:00:00Z")
+    .bind("2026-03-12T00:00:00Z")
+    .bind("{}")
+    .execute(db.pool())
+    .await
+    .unwrap();
+
+    // Create Stage
+    sqlx::query(
+        "INSERT INTO stages (id, parent_session_id, name, status, created_at, total_tasks, completed_tasks)
+         VALUES (?, ?, ?, 'Running', datetime('now'), 1, 0)"
+    )
+    .bind("stage-123")
+    .bind("main-session-1")
+    .bind("Test Stage")
+    .execute(db.pool())
+    .await
+    .unwrap();
+
+    let session_id = "subagent-session-1";
+
+    // Simulate transaction failure: Begin transaction, insert into sessions,
+    // then try to insert into subagent_sessions with invalid parent_id (should fail)
+    let mut tx = db.pool().begin().await.unwrap();
+
+    // Step 1: Insert into sessions table (succeeds)
+    sqlx::query(
+        "INSERT INTO sessions (id, title, created_at, updated_at, context) VALUES (?, ?, ?, ?, ?)"
+    )
+    .bind(session_id)
+    .bind("Test Task")
+    .bind("2026-03-12T00:00:00Z")
+    .bind("2026-03-12T00:00:00Z")
+    .bind("{}")
+    .execute(&mut *tx)
+    .await
+    .unwrap();
+
+    // Step 2: Try to insert with nonexistent parent_id (should fail due to FK constraint)
+    let result = sqlx::query(
+        "INSERT INTO subagent_sessions (session_id, parent_id, session_type, status, stage_id, created_at, updated_at)
+         VALUES (?, ?, 'Subagent', 'Idle', ?, datetime('now'), datetime('now'))"
+    )
+    .bind(session_id)
+    .bind("nonexistent-parent")  // Invalid parent_id - will violate FK constraint
+    .bind("stage-123")
+    .execute(&mut *tx)
+    .await;
+
+    // Should fail due to foreign key constraint
+    assert!(result.is_err(), "Second insert should fail due to FK constraint");
+
+    // Transaction is NOT committed (will be dropped and auto-rolled back)
+    drop(tx);
+
+    // Verify that the first insert was also rolled back (no orphaned session)
+    let count: (i32,) = sqlx::query_as(
+        "SELECT COUNT(*) FROM sessions WHERE id = ?"
+    )
+    .bind(session_id)
+    .fetch_one(db.pool())
+    .await
+    .unwrap();
+
+    assert_eq!(count.0, 0, "Session record should NOT exist due to transaction rollback");
+}

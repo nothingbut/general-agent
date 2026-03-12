@@ -369,6 +369,7 @@ impl SubagentOrchestrator {
     /// Create subagent session with dual-table insertion
     ///
     /// Inserts into both `sessions` (base session) and `subagent_sessions` (metadata) tables
+    /// using a transaction to ensure atomicity.
     ///
     /// # Arguments
     ///
@@ -379,7 +380,8 @@ impl SubagentOrchestrator {
     ///
     /// # Errors
     ///
-    /// Returns error if database pool not set or insertion fails
+    /// Returns error if database pool not set or insertion fails.
+    /// If either insertion fails, the transaction is rolled back automatically.
     async fn create_subagent_session(
         &self,
         session_id: Uuid,
@@ -392,6 +394,9 @@ impl SubagentOrchestrator {
             .as_ref()
             .ok_or_else(|| SubagentError::ConfigError("Database pool not set".to_string()))?;
 
+        // Begin transaction for atomic dual-table insertion
+        let mut tx = pool.pool().begin().await?;
+
         // Step 1: Insert into sessions table (base session record)
         sqlx::query(
             "INSERT INTO sessions (id, title, created_at, updated_at, context)
@@ -399,7 +404,7 @@ impl SubagentOrchestrator {
         )
         .bind(session_id.to_string())
         .bind(title)
-        .execute(pool.pool())
+        .execute(&mut *tx)
         .await?;
 
         // Step 2: Insert into subagent_sessions table (subagent metadata)
@@ -410,8 +415,11 @@ impl SubagentOrchestrator {
         .bind(session_id.to_string())
         .bind(parent_id.to_string())
         .bind(stage_id)
-        .execute(pool.pool())
+        .execute(&mut *tx)
         .await?;
+
+        // Commit transaction (both inserts succeed or both fail)
+        tx.commit().await?;
 
         Ok(())
     }
