@@ -4,16 +4,17 @@ use crate::{
     backend::{BackendCommand, BackendUpdate},
     event::{AppEvent, EventHandler},
     state::{AppState, FocusArea, MessageItem, SessionState},
-    ui,
+    ui::{self, SubagentOverlay},
     TuiResult,
 };
+use agent_workflow::subagent::{OrchestratorConfig, SubagentOrchestrator};
 use crossterm::{
     event::{self, Event},
     terminal::{disable_raw_mode, enable_raw_mode, EnterAlternateScreen, LeaveAlternateScreen},
     ExecutableCommand,
 };
 use ratatui::{backend::CrosstermBackend, Terminal};
-use std::io::{self, Stdout};
+use std::{io::{self, Stdout}, sync::Arc};
 use tokio::sync::mpsc;
 
 /// TUI 应用
@@ -32,6 +33,9 @@ pub struct TuiApp {
 
     /// 是否应该退出
     should_quit: bool,
+
+    /// Subagent overlay component
+    subagent_overlay: SubagentOverlay,
 }
 
 impl TuiApp {
@@ -48,12 +52,17 @@ impl TuiApp {
         let (backend_tx, backend_cmd_rx) = mpsc::unbounded_channel();
         let (_backend_update_tx, backend_rx) = mpsc::unbounded_channel();
 
+        // Create a placeholder orchestrator (for now, without database)
+        let orchestrator = Arc::new(SubagentOrchestrator::new(OrchestratorConfig::default()));
+        let subagent_overlay = SubagentOverlay::new(orchestrator);
+
         let app = Self {
             state: AppState::new(),
             terminal,
             backend_tx,
             backend_rx,
             should_quit: false,
+            subagent_overlay,
         };
 
         Ok((app, backend_cmd_rx))
@@ -73,12 +82,17 @@ impl TuiApp {
         // 创建命令通道
         let (backend_tx, backend_cmd_rx) = mpsc::unbounded_channel();
 
+        // Create a placeholder orchestrator (for now, without database)
+        let orchestrator = Arc::new(SubagentOrchestrator::new(OrchestratorConfig::default()));
+        let subagent_overlay = SubagentOverlay::new(orchestrator);
+
         let app = Self {
             state: AppState::new(),
             terminal,
             backend_tx,
             backend_rx,
             should_quit: false,
+            subagent_overlay,
         };
 
         Ok((app, backend_cmd_rx))
@@ -122,6 +136,9 @@ impl TuiApp {
             ui::render_chat_window(f, layout.chat_window, &self.state);
             ui::render_input_box(f, layout.input_box, &self.state);
             ui::render_info_bar(f, layout.info_bar, &self.state);
+
+            // Render subagent overlay as top layer
+            self.subagent_overlay.render(f, f.size());
         })?;
 
         Ok(())
@@ -311,6 +328,16 @@ impl TuiApp {
                     .set_session_state(session_id, SessionState::Error(error));
             }
         }
+    }
+
+    /// Get mutable reference to subagent overlay
+    pub fn subagent_overlay_mut(&mut self) -> &mut SubagentOverlay {
+        &mut self.subagent_overlay
+    }
+
+    /// Get current session ID (for setting overlay context)
+    pub fn current_session_id(&self) -> Option<uuid::Uuid> {
+        self.state.selected_session_id()
     }
 }
 
