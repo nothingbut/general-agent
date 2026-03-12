@@ -35,6 +35,7 @@ serde_json = "1"
 
 # 错误处理
 thiserror = { workspace = true }
+anyhow = { workspace = true }
 
 # 数据库 (用于错误转换)
 sqlx = { workspace = true }
