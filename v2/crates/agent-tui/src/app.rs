@@ -146,10 +146,43 @@ impl TuiApp {
 
     /// 处理事件
     async fn handle_events(&mut self) -> TuiResult<bool> {
+        use crossterm::event::{KeyCode, KeyModifiers};
+
         if event::poll(std::time::Duration::from_millis(100))? {
             if let Event::Key(key) = event::read()? {
-                if let Some(app_event) = EventHandler::map_key_event(key, self.state.focus) {
-                    self.handle_app_event(app_event)?;
+                // Check if overlay is visible and handle its events first
+                if self.subagent_overlay.is_visible() {
+                    match key.code {
+                        KeyCode::Esc => {
+                            self.subagent_overlay.toggle_visible();
+                        }
+                        KeyCode::Up => {
+                            self.subagent_overlay.move_up();
+                        }
+                        KeyCode::Down => {
+                            let states = self.subagent_overlay.get_filtered_states();
+                            self.subagent_overlay.move_down(states.len());
+                        }
+                        KeyCode::Tab => {
+                            self.subagent_overlay.toggle_view_mode();
+                        }
+                        KeyCode::Enter => {
+                            self.subagent_overlay.toggle_details();
+                        }
+                        _ => {}
+                    }
+                } else {
+                    // Handle Ctrl+S to toggle overlay
+                    if key.modifiers.contains(KeyModifiers::CONTROL) && key.code == KeyCode::Char('s') {
+                        self.subagent_overlay.toggle_visible();
+                        // Set current session context
+                        if let Some(session_id) = self.current_session_id() {
+                            self.subagent_overlay.set_current_session(session_id);
+                        }
+                    } else if let Some(app_event) = EventHandler::map_key_event(key, self.state.focus) {
+                        // Handle normal app events
+                        self.handle_app_event(app_event)?;
+                    }
                 }
             }
             Ok(true)
