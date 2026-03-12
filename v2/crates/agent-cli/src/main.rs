@@ -3,8 +3,8 @@
 use agent_core::traits::llm::LLMClient;
 use agent_llm::{AnthropicClient, OllamaClient};
 use agent_skills::{SkillLoader, SkillRegistry};
-use agent_storage::{repository::*, Database};
-use agent_workflow::{ConversationConfig, ConversationFlow, SessionManager};
+use agent_storage::Database;
+use agent_workflow::{AgentRuntime, ConversationConfig, ConversationFlow};
 use anyhow::{Context, Result};
 use clap::{Parser, Subcommand};
 use colored::*;
@@ -80,9 +80,7 @@ enum Commands {
 }
 
 struct App {
-    session_manager: Arc<SessionManager>,
-    llm_client: Arc<dyn LLMClient>,
-    skill_registry: Option<Arc<SkillRegistry>>,
+    runtime: Arc<AgentRuntime>,
 }
 
 impl App {
@@ -92,11 +90,6 @@ impl App {
             .await
             .context("Failed to connect to database")?;
         db.migrate().await.context("Failed to run migrations")?;
-
-        // 创建仓库
-        let session_repo = Arc::new(SqliteSessionRepository::new(db.pool().clone()));
-        let message_repo = Arc::new(SqliteMessageRepository::new(db.pool().clone()));
-        let session_manager = Arc::new(SessionManager::new(session_repo, message_repo));
 
         // 创建 LLM 客户端
         let llm_client: Arc<dyn LLMClient> = match cli.provider.as_str() {
@@ -145,15 +138,18 @@ impl App {
 
         println!();
 
+        // 创建 AgentRuntime
+        let runtime = AgentRuntime::new(db, llm_client, skill_registry)
+            .await
+            .context("Failed to create AgentRuntime")?;
+
         Ok(Self {
-            session_manager,
-            llm_client,
-            skill_registry,
+            runtime: Arc::new(runtime),
         })
     }
 
     async fn cmd_new(&self, title: Option<String>) -> Result<()> {
-        let session = self.session_manager.create_session(title).await?;
+        let session = self.runtime.session_manager().create_session(title).await?;
 
         println!("{}", "✓ 会话创建成功".green().bold());
         println!("ID: {}", session.id.to_string().cyan());
@@ -165,7 +161,7 @@ impl App {
     }
 
     async fn cmd_list(&self, limit: u32) -> Result<()> {
-        let sessions = self.session_manager.list_sessions(limit, 0).await?;
+        let sessions = self.runtime.session_manager().list_sessions(limit, 0).await?;
 
         if sessions.is_empty() {
             println!("{}", "没有找到会话".yellow());
@@ -177,7 +173,8 @@ impl App {
 
         for session in sessions {
             let msg_count = self
-                .session_manager
+                .runtime
+                .session_manager()
                 .count_messages(session.id)
                 .await
                 .unwrap_or(0);
@@ -201,7 +198,7 @@ impl App {
         let session_id = Uuid::parse_str(session_id_str).context("Invalid session ID")?;
 
         // 验证会话存在
-        let session = self.session_manager.load_session(session_id).await?;
+        let session = self.runtime.session_manager().load_session(session_id).await?;
 
         println!("{}", "进入对话模式 (输入 'exit' 退出)".green().bold());
         if let Some(title) = session.title {
@@ -212,13 +209,13 @@ impl App {
         // 创建对话流程
         let config = ConversationConfig::default();
         let mut flow = ConversationFlow::new(
-            self.session_manager.clone(),
-            self.llm_client.clone(),
+            self.runtime.session_manager().clone(),
+            self.runtime.llm_client().clone(),
             config,
         );
 
         // 如果启用了技能系统，添加到 flow
-        if let Some(registry) = &self.skill_registry {
+        if let Some(registry) = self.runtime.skill_registry() {
             flow = flow.with_skills(registry.clone());
         }
 
@@ -238,6 +235,21 @@ impl App {
             if input.eq_ignore_ascii_case("exit") {
                 println!("{}", "再见！".green());
                 break;
+            }
+
+            // 检查是否为 subagent 命令
+            if input.starts_with("/subagent") {
+                match self.handle_subagent_command(session_id, input).await {
+                    Ok(response) => {
+                        println!("{}", response.green());
+                        println!();
+                    }
+                    Err(e) => {
+                        println!("{} {}", "错误:".red(), e);
+                        println!();
+                    }
+                }
+                continue;
             }
 
             print!("{} ", "AI:".cyan().bold());
@@ -278,7 +290,7 @@ impl App {
     async fn cmd_delete(&self, session_id_str: &str) -> Result<()> {
         let session_id = Uuid::parse_str(session_id_str).context("Invalid session ID")?;
 
-        self.session_manager.delete_session(session_id).await?;
+        self.runtime.session_manager().delete_session(session_id).await?;
 
         println!("{}", "✓ 会话已删除".green().bold());
 
@@ -286,7 +298,7 @@ impl App {
     }
 
     async fn cmd_search(&self, query: &str, limit: u32) -> Result<()> {
-        let sessions = self.session_manager.search_sessions(query, limit).await?;
+        let sessions = self.runtime.session_manager().search_sessions(query, limit).await?;
 
         if sessions.is_empty() {
             println!("{}", "没有找到匹配的会话".yellow());
@@ -305,6 +317,56 @@ impl App {
         }
 
         Ok(())
+    }
+
+    /// 处理 subagent 命令
+    async fn handle_subagent_command(
+        &self,
+        parent_session_id: Uuid,
+        input: &str,
+    ) -> Result<String> {
+        use agent_workflow::{parse_subagent_command, SubagentCommand};
+
+        // 解析命令
+        let command = parse_subagent_command(input)?;
+
+        match command {
+            SubagentCommand::Start { tasks, timeout_secs, model } => {
+                println!("{}", "正在启动 subagent...".yellow());
+
+                // 构建配置
+                let mut config = agent_workflow::subagent::SubagentConfig {
+                    title: "CLI Subagent Stage".to_string(),
+                    initial_prompt: "Execute the given task".to_string(),
+                    shared_context: agent_workflow::subagent::SharedContext::default(),
+                    llm_config: agent_workflow::subagent::LLMConfig::default(),
+                    keep_alive: false,
+                    timeout: None,
+                };
+
+                if let Some(timeout) = timeout_secs {
+                    config.timeout = Some(std::time::Duration::from_secs(timeout));
+                }
+                if let Some(model_name) = model {
+                    config.llm_config.model = model_name;
+                }
+
+                // 创建并执行 Stage
+                let stage_id = self.runtime.orchestrator()
+                    .create_and_execute_stage(
+                        parent_session_id,
+                        tasks.clone(),
+                        Some(config),
+                    )
+                    .await?;
+
+                Ok(format!(
+                    "✓ 已启动 {} 个 subagent (Stage ID: {})\n提示: 状态将在后台更新",
+                    tasks.len(),
+                    stage_id.to_string().chars().take(8).collect::<String>()
+                ))
+            }
+        }
     }
 }
 
