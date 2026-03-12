@@ -277,18 +277,11 @@ impl SubagentOrchestrator {
             .filter(|s| s.status() == super::models::SessionStatus::Running)
             .count();
 
-        let avg_progress = if total > 0 {
-            states.iter().map(|s| s.progress()).sum::<f32>() / total as f32
-        } else {
-            0.0
-        };
-
         StageStats {
             total,
             completed,
             failed,
             running,
-            avg_progress,
         }
     }
 }
@@ -300,5 +293,4 @@ pub struct StageStats {
     pub completed: usize,
     pub failed: usize,
     pub running: usize,
-    pub avg_progress: f32,
 }
