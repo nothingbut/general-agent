@@ -5,7 +5,7 @@ use agent_skills::SkillRegistry;
 use crate::{SessionManager, subagent::SubagentOrchestrator};
 use agent_core::traits::LLMClient;
 use std::sync::Arc;
-use anyhow::Result;
+use anyhow::{Context, Result};
 
 /// 统一的运行时环境，持有所有共享资源
 pub struct AgentRuntime {
@@ -25,24 +25,34 @@ impl AgentRuntime {
     ) -> Result<Self> {
         let db = Arc::new(db);
 
-        // 创建 repositories
-        let session_repo = Arc::new(
-            agent_storage::SqliteSessionRepository::new(db.pool().clone())
-        );
-        let message_repo = Arc::new(
-            agent_storage::SqliteMessageRepository::new(db.pool().clone())
-        );
+        // Create session repository
+        let session_repo = (|| {
+            let repo = agent_storage::SqliteSessionRepository::new(db.pool().clone());
+            Ok::<_, anyhow::Error>(Arc::new(repo))
+        })()
+        .context("Failed to create session repository")?;
 
-        let session_manager = Arc::new(
-            SessionManager::new(session_repo, message_repo)
-        );
+        // Create message repository
+        let message_repo = (|| {
+            let repo = agent_storage::SqliteMessageRepository::new(db.pool().clone());
+            Ok::<_, anyhow::Error>(Arc::new(repo))
+        })()
+        .context("Failed to create message repository")?;
 
-        // 创建 orchestrator
-        let orchestrator = SubagentOrchestrator::new(
-            crate::subagent::OrchestratorConfig::default()
-        );
+        // Create session manager
+        let session_manager = (|| {
+            let manager = SessionManager::new(session_repo, message_repo);
+            Ok::<_, anyhow::Error>(Arc::new(manager))
+        })()
+        .context("Failed to create session manager")?;
 
-        let orchestrator = Arc::new(orchestrator);
+        // Create orchestrator
+        let orchestrator = (|| {
+            let config = crate::subagent::OrchestratorConfig::default();
+            let orch = SubagentOrchestrator::new(config);
+            Ok::<_, anyhow::Error>(Arc::new(orch))
+        })()
+        .context("Failed to create subagent orchestrator")?;
 
         Ok(Self {
             db,
