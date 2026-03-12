@@ -1,5 +1,6 @@
 //! SubagentOrchestrator - Central coordinator for subagent execution
 
+use chrono::Utc;
 use dashmap::DashMap;
 use std::sync::atomic::{AtomicUsize, Ordering};
 use std::sync::Arc;
@@ -186,6 +187,14 @@ impl SubagentOrchestrator {
         let stage_id = Uuid::new_v4();
         let stage_id_str = stage_id.to_string();
 
+        // Generate stage name with timestamp
+        let stage_name = format!("Stage - {}", Utc::now().format("%H:%M:%S"));
+
+        // Save stage to database if pool is set
+        if self.pool.is_some() {
+            self.save_stage(&stage_id_str, parent_session_id, &stage_name, tasks.len()).await?;
+        }
+
         // Use provided config or default
         let base_config = config.unwrap_or_else(|| SubagentConfig {
             title: "Subagent Task".to_string(),
@@ -205,6 +214,17 @@ impl SubagentOrchestrator {
         // Create and spawn tasks
         for (idx, task_desc) in tasks.into_iter().enumerate() {
             let session_id = Uuid::new_v4();
+            let title = format!("Task {}: {}", idx + 1, task_desc);
+
+            // Save subagent session to database if pool is set
+            if self.pool.is_some() {
+                self.create_subagent_session(
+                    session_id,
+                    parent_session_id,
+                    &stage_id_str,
+                    &title,
+                ).await?;
+            }
 
             // Create task config
             let mut task_config = base_config.clone();
@@ -306,6 +326,124 @@ impl SubagentOrchestrator {
             failed,
             running,
         }
+    }
+
+    /// Save stage to database
+    ///
+    /// # Arguments
+    ///
+    /// * `stage_id` - Stage identifier
+    /// * `parent_session_id` - Parent session UUID
+    /// * `stage_name` - Human-readable stage name
+    /// * `total_tasks` - Number of tasks in this stage
+    ///
+    /// # Errors
+    ///
+    /// Returns error if database pool not set or insertion fails
+    async fn save_stage(
+        &self,
+        stage_id: &str,
+        parent_session_id: Uuid,
+        stage_name: &str,
+        _total_tasks: usize,
+    ) -> SubagentResult<()> {
+        let pool = self
+            .pool
+            .as_ref()
+            .ok_or_else(|| SubagentError::ConfigError("Database pool not set".to_string()))?;
+
+        sqlx::query(
+            "INSERT INTO stages (id, parent_session_id, name, status, created_at)
+             VALUES (?, ?, ?, 'Running', datetime('now'))"
+        )
+        .bind(stage_id)
+        .bind(parent_session_id.to_string())
+        .bind(stage_name)
+        .execute(pool.pool())
+        .await?;
+
+        Ok(())
+    }
+
+    /// Create subagent session with dual-table insertion
+    ///
+    /// Inserts into both `sessions` (base session) and `subagent_sessions` (metadata) tables
+    ///
+    /// # Arguments
+    ///
+    /// * `session_id` - Subagent session UUID
+    /// * `parent_id` - Parent session UUID
+    /// * `stage_id` - Stage identifier
+    /// * `title` - Session title
+    ///
+    /// # Errors
+    ///
+    /// Returns error if database pool not set or insertion fails
+    async fn create_subagent_session(
+        &self,
+        session_id: Uuid,
+        parent_id: Uuid,
+        stage_id: &str,
+        title: &str,
+    ) -> SubagentResult<()> {
+        let pool = self
+            .pool
+            .as_ref()
+            .ok_or_else(|| SubagentError::ConfigError("Database pool not set".to_string()))?;
+
+        // Step 1: Insert into sessions table (base session record)
+        sqlx::query(
+            "INSERT INTO sessions (id, title, created_at, updated_at, context)
+             VALUES (?, ?, datetime('now'), datetime('now'), '{}')"
+        )
+        .bind(session_id.to_string())
+        .bind(title)
+        .execute(pool.pool())
+        .await?;
+
+        // Step 2: Insert into subagent_sessions table (subagent metadata)
+        sqlx::query(
+            "INSERT INTO subagent_sessions (session_id, parent_id, session_type, status, stage_id, created_at, updated_at)
+             VALUES (?, ?, 'Subagent', 'Idle', ?, datetime('now'), datetime('now'))"
+        )
+        .bind(session_id.to_string())
+        .bind(parent_id.to_string())
+        .bind(stage_id)
+        .execute(pool.pool())
+        .await?;
+
+        Ok(())
+    }
+
+    /// Update subagent session status
+    ///
+    /// # Arguments
+    ///
+    /// * `session_id` - Subagent session UUID
+    /// * `status` - New status value
+    ///
+    /// # Errors
+    ///
+    /// Returns error if database pool not set or update fails
+    pub async fn update_subagent_status(
+        &self,
+        session_id: Uuid,
+        status: &str,
+    ) -> SubagentResult<()> {
+        let pool = self
+            .pool
+            .as_ref()
+            .ok_or_else(|| SubagentError::ConfigError("Database pool not set".to_string()))?;
+
+        sqlx::query(
+            "UPDATE subagent_sessions SET status = ?, updated_at = datetime('now') WHERE session_id = ?"
+        )
+        .bind(status)
+        .bind(session_id.to_string())
+        .execute(pool.pool())
+        .await?;
+
+        Ok(())
     }
 }
 
