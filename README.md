@@ -6,15 +6,18 @@
 
 ```
 general-agent/
-├── v1/                # Python 版本（第一版，参考实现）
+├── v1/                # Python 版本（参考实现，维护模式）
 │   ├── src/          # Python 源代码
 │   ├── tests/        # Python 测试
 │   └── README.md     # V1 说明文档
 │
-├── v2/                # Rust 版本（生产版本，活跃开发）
+├── v2/                # Rust 版本（生产版本，活跃开发）⭐
 │   ├── crates/       # Rust crates
 │   ├── docs/         # 文档
 │   └── README.md     # V2 说明文档
+│
+├── v3/                # C# 版本（规划中）
+│   └── README.md     # V3 规划说明
 │
 ├── docs/              # 通用文档
 └── CLAUDE.md          # Claude Code 项目指南
@@ -36,11 +39,13 @@ cargo build --release
 cargo test
 ```
 
-## 📚 V1 (Python) 参考
+## 📚 其他版本
 
-V1 Python 版本保留用于功能对比和快速原型开发。
+### V1 (Python) - 参考实现
+保留用于功能对比和快速原型开发。[详见 v1/README.md](v1/README.md)
 
-详见：[v1/README.md](v1/README.md)
+### V3 (C#) - 规划中 🚧
+为未来的 C# 实现预留目录。[详见 v3/README.md](v3/README.md)
 
 ## 🔧 当前开发
 
