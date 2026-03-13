@@ -6,4 +6,4 @@ pub mod workflow;
 
 pub use message::SqliteMessageRepository;
 pub use session::SqliteSessionRepository;
-pub use workflow::{WorkflowRepository, WorkflowRecord, TaskRecord};
+pub use workflow::{WorkflowRepository, WorkflowRecord, TaskRecord, WorkflowExecutionLogRecord, WorkflowStats};
