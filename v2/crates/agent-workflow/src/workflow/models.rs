@@ -30,6 +30,8 @@ use chrono::{DateTime, Utc};
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 
+use super::retry::{RetryStrategy, RetryCondition, RetryHistory};
+
 /// 工作流定义
 ///
 /// 包含一组有依赖关系的任务，形成 DAG（有向无环图）。
@@ -85,11 +87,10 @@ impl Workflow {
 ///
 /// let task = Task::new("task-1", "Task 1", TaskType::Custom("test".to_string()))
 ///     .with_dependency("task-0")
-///     .with_config(TaskConfig {
-///         retry_count: 3,
-///         timeout_secs: 30,
-///         priority: 1,
-///     });
+///     .with_config(TaskConfig::new()
+///         .with_retry_strategy(RetryStrategy::exponential(3, 100, 5000, 2.0))
+///         .with_timeout(30)
+///         .with_priority(1));
 /// ```
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct Task {
@@ -178,21 +179,61 @@ pub enum TaskType {
 /// 控制任务执行的行为参数。
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct TaskConfig {
-    /// 重试次数 - 任务失败后的最大重试次数
+    /// 重试次数 - 任务失败后的最大重试次数（已废弃，使用 retry_strategy）
+    #[deprecated(note = "Use retry_strategy instead")]
     pub retry_count: u32,
     /// 超时时间（秒）- 单次执行的超时限制
     pub timeout_secs: u64,
     /// 优先级 - 数值越大优先级越高（暂未实现）
     pub priority: i32,
+    /// 重试策略 - 控制重试行为
+    #[serde(default)]
+    pub retry_strategy: RetryStrategy,
+    /// 重试条件 - 判断哪些错误应该重试
+    #[serde(default)]
+    pub retry_condition: RetryCondition,
 }
 
 impl Default for TaskConfig {
     fn default() -> Self {
         Self {
-            retry_count: 3,
+            retry_count: 3, // 保留以兼容旧代码
             timeout_secs: 60,
             priority: 0,
+            retry_strategy: RetryStrategy::default(),
+            retry_condition: RetryCondition::default(),
         }
+    }
+}
+
+impl TaskConfig {
+    /// 创建新的任务配置
+    pub fn new() -> Self {
+        Self::default()
+    }
+
+    /// 设置重试策略
+    pub fn with_retry_strategy(mut self, strategy: RetryStrategy) -> Self {
+        self.retry_strategy = strategy;
+        self
+    }
+
+    /// 设置重试条件
+    pub fn with_retry_condition(mut self, condition: RetryCondition) -> Self {
+        self.retry_condition = condition;
+        self
+    }
+
+    /// 设置超时时间
+    pub fn with_timeout(mut self, timeout_secs: u64) -> Self {
+        self.timeout_secs = timeout_secs;
+        self
+    }
+
+    /// 设置优先级
+    pub fn with_priority(mut self, priority: i32) -> Self {
+        self.priority = priority;
+        self
     }
 }
 
@@ -294,6 +335,8 @@ pub struct TaskResult {
     pub error: Option<String>,
     /// 执行时间（毫秒）
     pub execution_time_ms: u64,
+    /// 重试历史
+    pub retry_history: RetryHistory,
 }
 
 impl TaskResult {
@@ -305,6 +348,7 @@ impl TaskResult {
             output: Some(output),
             error: None,
             execution_time_ms,
+            retry_history: RetryHistory::new(),
         }
     }
 
@@ -316,6 +360,41 @@ impl TaskResult {
             output: None,
             error: Some(error),
             execution_time_ms,
+            retry_history: RetryHistory::new(),
+        }
+    }
+
+    /// 创建带重试历史的成功结果
+    pub fn success_with_retries(
+        task_id: String,
+        output: String,
+        execution_time_ms: u64,
+        retry_history: RetryHistory,
+    ) -> Self {
+        Self {
+            task_id,
+            status: TaskStatus::Completed,
+            output: Some(output),
+            error: None,
+            execution_time_ms,
+            retry_history,
+        }
+    }
+
+    /// 创建带重试历史的失败结果
+    pub fn failure_with_retries(
+        task_id: String,
+        error: String,
+        execution_time_ms: u64,
+        retry_history: RetryHistory,
+    ) -> Self {
+        Self {
+            task_id,
+            status: TaskStatus::Failed(error.clone()),
+            output: None,
+            error: Some(error),
+            execution_time_ms,
+            retry_history,
         }
     }
 }

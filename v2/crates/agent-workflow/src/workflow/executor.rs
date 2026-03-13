@@ -25,6 +25,7 @@ use anyhow::{Result, bail};
 use std::sync::Arc;
 
 use super::models::*;
+use super::retry::{RetryHistory, RetryAttempt};
 
 /// MCP 客户端管理器 - 管理多个 MCP 服务器连接
 #[derive(Clone)]
@@ -139,46 +140,91 @@ impl TaskExecutor {
     pub async fn execute_task(&self, task: &Task) -> TaskResult {
         let start = std::time::Instant::now();
 
-        // 应用超时
-        let result = timeout(
-            Duration::from_secs(task.config.timeout_secs),
-            self.execute_task_inner(task),
-        )
-        .await;
+        // 带重试的执行
+        let (result, retry_history) = self.execute_task_with_retry(task).await;
 
         let elapsed = start.elapsed().as_millis() as u64;
 
         match result {
-            Ok(Ok(output)) => TaskResult::success(task.id.clone(), output, elapsed),
-            Ok(Err(e)) => TaskResult::failure(task.id.clone(), e.to_string(), elapsed),
-            Err(_) => TaskResult::failure(
-                task.id.clone(),
-                "Task execution timeout".to_string(),
-                elapsed,
-            ),
+            Ok(output) => TaskResult::success_with_retries(task.id.clone(), output, elapsed, retry_history),
+            Err(e) => TaskResult::failure_with_retries(task.id.clone(), e.to_string(), elapsed, retry_history),
         }
     }
 
-    /// 执行任务的内部逻辑（带重试）
-    async fn execute_task_inner(&self, task: &Task) -> Result<String> {
-        let mut last_error = None;
+    /// 执行任务（带重试机制）
+    ///
+    /// 返回 (结果, 重试历史)
+    async fn execute_task_with_retry(&self, task: &Task) -> (Result<String>, RetryHistory) {
+        let mut retry_history = RetryHistory::new();
+        let retry_strategy = &task.config.retry_strategy;
+        let retry_condition = &task.config.retry_condition;
 
-        for attempt in 0..=task.config.retry_count {
-            if attempt > 0 {
-                // 指数退避
-                let delay = Duration::from_millis(100 * 2u64.pow(attempt - 1));
-                tokio::time::sleep(delay).await;
-            }
-
-            match self.execute_task_once(task).await {
-                Ok(output) => return Ok(output),
-                Err(e) => {
-                    last_error = Some(e);
+        // 第一次尝试
+        match self.execute_task_once_with_timeout(task).await {
+            Ok(output) => return (Ok(output), retry_history),
+            Err(e) => {
+                // 检查是否应该重试
+                if !retry_condition.should_retry(&e.to_string()) {
+                    return (Err(e), retry_history);
                 }
+
+                // 如果策略不允许重试
+                if retry_strategy.max_retries() == 0 {
+                    return (Err(e), retry_history);
+                }
+
+                // 开始重试
+                let mut last_error = e;
+
+                for attempt in 1..=retry_strategy.max_retries() {
+                    // 计算延迟
+                    let delay = retry_strategy.delay_for_attempt(attempt);
+
+                    if let Some(delay_duration) = delay {
+                        // 记录重试尝试
+                        retry_history.add_attempt(RetryAttempt::new(
+                            attempt,
+                            last_error.to_string(),
+                            delay_duration.as_millis() as u64,
+                        ));
+
+                        // 等待延迟
+                        tokio::time::sleep(delay_duration).await;
+
+                        // 再次尝试
+                        match self.execute_task_once_with_timeout(task).await {
+                            Ok(output) => return (Ok(output), retry_history),
+                            Err(e) => {
+                                // 检查是否应该继续重试
+                                if !retry_condition.should_retry(&e.to_string()) {
+                                    return (Err(e), retry_history);
+                                }
+                                last_error = e;
+                            }
+                        }
+                    }
+                }
+
+                // 达到最大重试次数
+                retry_history.mark_max_retries_reached();
+                (Err(last_error), retry_history)
             }
         }
+    }
 
-        Err(last_error.unwrap())
+    /// 执行任务一次（带超时控制）
+    async fn execute_task_once_with_timeout(&self, task: &Task) -> Result<String> {
+        let result = timeout(
+            Duration::from_secs(task.config.timeout_secs),
+            self.execute_task_once(task),
+        )
+        .await;
+
+        match result {
+            Ok(Ok(output)) => Ok(output),
+            Ok(Err(e)) => Err(e),
+            Err(_) => bail!("Task execution timeout after {} seconds", task.config.timeout_secs),
+        }
     }
 
     /// 执行任务一次（实际的任务逻辑）

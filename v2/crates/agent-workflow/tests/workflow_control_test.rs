@@ -11,11 +11,9 @@ fn create_test_task(id: &str, deps: Vec<&str>) -> Task {
         name: format!("Task {}", id),
         task_type: TaskType::Custom("test".to_string()),
         dependencies: deps.iter().map(|s| s.to_string()).collect(),
-        config: TaskConfig {
-            retry_count: 0,
-            timeout_secs: 10,
-            priority: 0,
-        },
+        config: TaskConfig::new()
+            .with_retry_strategy(RetryStrategy::None)
+            .with_timeout(10),
         metadata: HashMap::new(),
     }
 }
@@ -28,11 +26,9 @@ fn create_slow_task(id: &str, deps: Vec<&str>, delay_ms: u64) -> Task {
         name: format!("Slow Task {}", id),
         task_type: TaskType::Custom(format!("slow-{}", delay_ms)),
         dependencies: deps.iter().map(|s| s.to_string()).collect(),
-        config: TaskConfig {
-            retry_count: 0,
-            timeout_secs: 30,
-            priority: 0,
-        },
+        config: TaskConfig::new()
+            .with_retry_strategy(RetryStrategy::None)
+            .with_timeout(30),
         metadata: HashMap::new(),
     };
     task.metadata.insert("delay_ms".to_string(), delay_ms.to_string());
