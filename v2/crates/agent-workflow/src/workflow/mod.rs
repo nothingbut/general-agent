@@ -5,6 +5,6 @@ pub mod orchestrator;
 pub mod executor;
 
 // 重新导出核心类型
-pub use models::{Task, TaskConfig, TaskResult, TaskStatus, TaskType, Workflow, WorkflowResult};
-pub use orchestrator::WorkflowOrchestrator;
+pub use models::{Task, TaskConfig, TaskResult, TaskStatus, TaskType, Workflow, WorkflowResult, WorkflowStatus};
+pub use orchestrator::{WorkflowOrchestrator, ControlState};
 pub use executor::{TaskExecutor, MCPClientManager};

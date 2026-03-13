@@ -33,14 +33,30 @@
 use petgraph::Graph;
 use petgraph::graph::NodeIndex;
 use std::collections::HashMap;
+use std::sync::Arc;
+use tokio::sync::RwLock;
 use anyhow::{Result, bail};
 
-use super::models::{Workflow, Task, WorkflowResult, TaskStatus};
+use super::models::{Workflow, Task, WorkflowResult, TaskStatus, WorkflowStatus};
 use super::executor::TaskExecutor;
 
+/// 工作流控制状态
+#[derive(Debug, Clone, PartialEq)]
+pub enum ControlState {
+    /// 正常运行
+    Running,
+    /// 请求取消
+    CancelRequested,
+    /// 请求暂停
+    PauseRequested,
+    /// 已暂停
+    Paused,
+}
+
 /// 工作流编排器
-#[derive(Debug)]
 pub struct WorkflowOrchestrator {
+    /// 工作流 ID
+    workflow_id: String,
     /// DAG 图结构 (节点=TaskID)
     /// 用于循环检测和拓扑排序
     #[allow(dead_code)]
@@ -51,6 +67,17 @@ pub struct WorkflowOrchestrator {
     /// 用于构建 DAG 时的节点查找
     #[allow(dead_code)]
     node_map: HashMap<String, NodeIndex>,
+    /// 控制状态（用于取消和暂停）
+    control_state: Arc<RwLock<ControlState>>,
+}
+
+impl std::fmt::Debug for WorkflowOrchestrator {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("WorkflowOrchestrator")
+            .field("workflow_id", &self.workflow_id)
+            .field("task_count", &self.task_map.len())
+            .finish()
+    }
 }
 
 impl WorkflowOrchestrator {
@@ -77,6 +104,7 @@ impl WorkflowOrchestrator {
         let mut graph = Graph::new();
         let mut task_map = HashMap::new();
         let mut node_map = HashMap::new();
+        let workflow_id = workflow.id.clone();
 
         // 1. 添加所有任务节点
         for task in workflow.tasks {
@@ -103,10 +131,46 @@ impl WorkflowOrchestrator {
         }
 
         Ok(Self {
+            workflow_id,
             graph,
             task_map,
             node_map,
+            control_state: Arc::new(RwLock::new(ControlState::Running)),
         })
+    }
+
+    /// 请求取消工作流
+    ///
+    /// 设置取消标志，当前正在执行的任务会完成，但不会启动新任务。
+    pub async fn cancel(&self) {
+        let mut state = self.control_state.write().await;
+        *state = ControlState::CancelRequested;
+    }
+
+    /// 请求暂停工作流
+    ///
+    /// 设置暂停标志，当前正在执行的任务会完成，然后工作流进入暂停状态。
+    pub async fn pause(&self) {
+        let mut state = self.control_state.write().await;
+        if *state == ControlState::Running {
+            *state = ControlState::PauseRequested;
+        }
+    }
+
+    /// 恢复暂停的工作流
+    ///
+    /// 将暂停状态改为运行状态，允许继续执行。
+    /// 注意：需要重新调用 execute() 来实际恢复执行。
+    pub async fn resume(&self) {
+        let mut state = self.control_state.write().await;
+        if *state == ControlState::Paused {
+            *state = ControlState::Running;
+        }
+    }
+
+    /// 获取当前控制状态
+    pub async fn get_control_state(&self) -> ControlState {
+        self.control_state.read().await.clone()
     }
 
     /// 获取可以立即执行的任务（所有依赖已完成）
@@ -192,9 +256,28 @@ impl WorkflowOrchestrator {
         let start = Instant::now();
         let mut completed = Vec::new();
         let mut results = HashMap::new();
-        let workflow_id = "workflow"; // TODO: 从 workflow 获取
 
         loop {
+            // 0. 检查控制状态
+            let state = self.control_state.read().await.clone();
+            match state {
+                ControlState::CancelRequested => {
+                    bail!("Workflow cancelled by user");
+                }
+                ControlState::PauseRequested => {
+                    // 设置为已暂停状态
+                    let mut state = self.control_state.write().await;
+                    *state = ControlState::Paused;
+                    bail!("Workflow paused by user");
+                }
+                ControlState::Paused => {
+                    bail!("Workflow is paused, call resume() to continue");
+                }
+                ControlState::Running => {
+                    // 继续执行
+                }
+            }
+
             // 1. 获取就绪任务
             let ready_tasks = self.get_ready_tasks(&completed);
 
@@ -245,7 +328,7 @@ impl WorkflowOrchestrator {
         }
 
         Ok(WorkflowResult {
-            workflow_id: workflow_id.to_string(),
+            workflow_id: self.workflow_id.clone(),
             task_results: results,
             execution_time_ms: start.elapsed().as_millis() as u64,
         })

@@ -196,6 +196,58 @@ impl Default for TaskConfig {
     }
 }
 
+/// 工作流状态
+///
+/// 表示整个工作流的执行状态
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+pub enum WorkflowStatus {
+    /// 等待开始
+    Pending,
+    /// 执行中
+    Running,
+    /// 执行成功
+    Completed,
+    /// 执行失败
+    Failed(String),
+    /// 已取消
+    Cancelled,
+    /// 已暂停 - 可以恢复
+    Paused,
+}
+
+impl WorkflowStatus {
+    /// 转换为字符串（用于数据库存储）
+    pub fn to_string(&self) -> String {
+        match self {
+            WorkflowStatus::Pending => "pending".to_string(),
+            WorkflowStatus::Running => "running".to_string(),
+            WorkflowStatus::Completed => "completed".to_string(),
+            WorkflowStatus::Failed(msg) => format!("failed:{}", msg),
+            WorkflowStatus::Cancelled => "cancelled".to_string(),
+            WorkflowStatus::Paused => "paused".to_string(),
+        }
+    }
+
+    /// 从字符串解析（用于数据库加载）
+    pub fn from_string(s: &str) -> Self {
+        if s == "pending" {
+            WorkflowStatus::Pending
+        } else if s == "running" {
+            WorkflowStatus::Running
+        } else if s == "completed" {
+            WorkflowStatus::Completed
+        } else if s == "cancelled" {
+            WorkflowStatus::Cancelled
+        } else if s == "paused" {
+            WorkflowStatus::Paused
+        } else if let Some(msg) = s.strip_prefix("failed:") {
+            WorkflowStatus::Failed(msg.to_string())
+        } else {
+            WorkflowStatus::Failed(format!("Unknown status: {}", s))
+        }
+    }
+}
+
 /// 任务状态
 ///
 /// 表示任务的执行状态，遵循状态机转换：
