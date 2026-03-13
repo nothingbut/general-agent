@@ -89,19 +89,62 @@ impl TaskExecutor {
                 tokio::time::sleep(Duration::from_millis(10)).await;
                 Ok(format!("Executed custom task: {}", name))
             }
-            TaskType::LLMCall => {
-                bail!("LLMCall not implemented yet")
+            TaskType::LLMCall { prompt, model, temperature, max_tokens } => {
+                self.execute_llm_call(prompt, model.as_deref(), *temperature, *max_tokens).await
             }
-            TaskType::SkillExecution => {
-                bail!("SkillExecution not implemented yet")
+            TaskType::SkillExecution { skill_name, params } => {
+                bail!("SkillExecution not implemented yet: {} {:?}", skill_name, params)
             }
-            TaskType::MCPToolCall => {
-                bail!("MCPToolCall not implemented yet")
+            TaskType::MCPToolCall { server_name, tool_name, params } => {
+                bail!("MCPToolCall not implemented yet: {}:{} {:?}", server_name, tool_name, params)
             }
-            TaskType::Subworkflow => {
-                bail!("Subworkflow not implemented yet")
+            TaskType::Subworkflow { workflow_id } => {
+                bail!("Subworkflow not implemented yet: {}", workflow_id)
             }
         }
+    }
+
+    /// 执行 LLM 调用
+    async fn execute_llm_call(
+        &self,
+        prompt: &str,
+        model: Option<&str>,
+        temperature: Option<f32>,
+        max_tokens: Option<u32>,
+    ) -> Result<String> {
+        use agent_core::{
+            models::{Message, MessageRole},
+            traits::llm::{CompletionRequest, LLMClient},
+        };
+        use agent_llm::AnthropicClient;
+        use uuid::Uuid;
+
+        // 创建 LLM 客户端
+        let client = AnthropicClient::from_env()
+            .map_err(|e| anyhow::anyhow!("Failed to create LLM client: {}", e))?;
+
+        // 构建消息
+        let session_id = Uuid::new_v4(); // 临时会话 ID
+        let message = Message::new(session_id, MessageRole::User, prompt.to_string());
+
+        // 构建请求
+        let mut request = CompletionRequest::new(
+            vec![message],
+            model.unwrap_or("claude-3-5-sonnet-20241022").to_string(),
+        );
+
+        if let Some(temp) = temperature {
+            request = request.with_temperature(temp);
+        }
+        if let Some(tokens) = max_tokens {
+            request = request.with_max_tokens(tokens);
+        }
+
+        // 调用 LLM
+        let response = client.complete(request).await
+            .map_err(|e| anyhow::anyhow!("LLM call failed: {}", e))?;
+
+        Ok(response.content)
     }
 }
 
@@ -140,14 +183,49 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn test_execute_unimplemented_task() {
+    async fn test_execute_unimplemented_skill() {
         let executor = TaskExecutor::new();
 
-        let task = Task::new("test", "Test Task", TaskType::LLMCall);
+        let task = Task::new(
+            "test",
+            "Test Task",
+            TaskType::SkillExecution {
+                skill_name: "test_skill".to_string(),
+                params: None,
+            },
+        );
 
         let result = executor.execute_task(&task).await;
         assert!(matches!(result.status, TaskStatus::Failed(_)));
         assert!(result.error.is_some());
         assert!(result.error.unwrap().contains("not implemented"));
+    }
+
+    #[tokio::test]
+    #[ignore] // 需要真实的 API Key，在 CI 中跳过
+    async fn test_execute_llm_call() {
+        // 只有在设置了 ANTHROPIC_API_KEY 时才运行
+        if std::env::var("ANTHROPIC_API_KEY").is_err() {
+            return;
+        }
+
+        let executor = TaskExecutor::new();
+
+        let task = Task::new(
+            "test",
+            "Test LLM Call",
+            TaskType::LLMCall {
+                prompt: "What is 2+2? Answer with just the number.".to_string(),
+                model: Some("claude-3-5-sonnet-20241022".to_string()),
+                temperature: Some(0.0),
+                max_tokens: Some(10),
+            },
+        );
+
+        let result = executor.execute_task(&task).await;
+        assert_eq!(result.status, TaskStatus::Completed);
+        assert!(result.output.is_some());
+        let output = result.output.unwrap();
+        assert!(output.contains("4"), "Expected '4' in output, got: {}", output);
     }
 }

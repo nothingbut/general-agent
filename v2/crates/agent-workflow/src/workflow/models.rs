@@ -133,13 +133,42 @@ impl Task {
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
 pub enum TaskType {
     /// LLM 调用 - 调用大语言模型
-    LLMCall,
+    LLMCall {
+        /// 提示词内容
+        prompt: String,
+        /// 模型名称（如 claude-3-5-sonnet-20241022）
+        #[serde(skip_serializing_if = "Option::is_none")]
+        model: Option<String>,
+        /// 温度参数 (0.0 - 2.0)
+        #[serde(skip_serializing_if = "Option::is_none")]
+        temperature: Option<f32>,
+        /// 最大 token 数
+        #[serde(skip_serializing_if = "Option::is_none")]
+        max_tokens: Option<u32>,
+    },
     /// Skills 技能执行 - 执行预定义的技能
-    SkillExecution,
+    SkillExecution {
+        /// 技能名称
+        skill_name: String,
+        /// 技能参数（JSON 格式）
+        #[serde(skip_serializing_if = "Option::is_none")]
+        params: Option<serde_json::Value>,
+    },
     /// MCP 工具调用 - 调用 MCP 服务器的工具
-    MCPToolCall,
+    MCPToolCall {
+        /// MCP 服务器名称
+        server_name: String,
+        /// 工具名称
+        tool_name: String,
+        /// 工具参数（JSON 格式）
+        #[serde(skip_serializing_if = "Option::is_none")]
+        params: Option<serde_json::Value>,
+    },
     /// 子工作流 - 嵌套执行另一个工作流
-    Subworkflow,
+    Subworkflow {
+        /// 子工作流 ID
+        workflow_id: String,
+    },
     /// 自定义任务 - 自定义逻辑（主要用于测试）
     Custom(String),
 }
@@ -262,8 +291,17 @@ mod tests {
 
     #[test]
     fn test_task_with_dependency() {
-        let task = Task::new("task-2", "Task 2", TaskType::LLMCall)
-            .with_dependency("task-1");
+        let task = Task::new(
+            "task-2",
+            "Task 2",
+            TaskType::LLMCall {
+                prompt: "test prompt".to_string(),
+                model: None,
+                temperature: None,
+                max_tokens: None,
+            },
+        )
+        .with_dependency("task-1");
         assert_eq!(task.dependencies.len(), 1);
         assert_eq!(task.dependencies[0], "task-1");
     }
