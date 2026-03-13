@@ -7,6 +7,7 @@ pub mod conversation_flow;
 pub mod session_manager;
 pub mod subagent;
 pub mod runtime;
+pub mod workflow;
 
 pub use command_parser::{parse_subagent_command, SubagentCommand};
 pub use conversation_flow::{ConversationConfig, ConversationFlow, StreamContext};

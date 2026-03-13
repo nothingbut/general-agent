@@ -40,6 +40,10 @@ anyhow = { workspace = true }
 # 数据库 (用于错误转换)
 sqlx = { workspace = true }
 
+# Workflow 专用依赖
+petgraph = "0.6"              # DAG 图结构
+futures = "0.3"               # Future 工具
+
 [features]
 default = []
 mcp = ["dep:agent-mcp"]
