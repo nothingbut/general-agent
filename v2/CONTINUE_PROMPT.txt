@@ -1,63 +1,50 @@
-继续 General Agent V2 Workflow 迁移 - Phase 3
+继续 General Agent V2 Workflow 迁移 - Week 4 Day 3
 
-【背景】
-- Python 版本已完成 Phase 1-7（包括完整的 Workflow 系统）
-- Rust V2 已完成 Phase 1-2（基础功能 + MCP/RAG/TUI）
-- 当前最大差距：Python 有 10,000+ 行 Workflow 编排代码，Rust V2 完全缺失
+【当前状态】
+✅ Week 1-2: Orchestrator + Executor 核心 (100%)
+✅ Week 3: Approval + Notification 系统 (100%)
+✅ Week 4 Day 1: 重试机制 (100%) - 921 行代码，20 个测试
+✅ Week 4 Day 2: 状态持久化 (100%) - 800 行代码，9 个测试
+✅ 代码库重组: Python→v1/, 创建 v3/ 目录
 
-【已完成】
-✅ 差距分析文档：MIGRATION_GAP_ANALYSIS.md
-✅ Week 1 执行计划：MIGRATION_WEEK1_PLAN.md
-✅ 删除了错误的分支（feature/v2-phase7-agent-workflow, feature/v2-stabilization）
-✅ 验证 Rust V2 状态：228 个测试通过，代码健康
+【分支和测试】
+- 分支: feature/workflow-migration
+- 总测试: 112 passed (agent-workflow)
+- 最新提交: 24416043 (v3 目录创建)
 
-【核心决策】
-采用方案 A：全力迁移 Workflow 系统
-- 目标：6 周完成 Python Phase 7 到 Rust V2 的完整迁移
-- 优先级：P0 Workflow 迁移 > P1 完善优化 > P2 生态扩展
-- 迁移完成后只维护 Rust 版本，停止 Python 开发
+【Week 4 剩余任务】
+🔲 Day 3: 错误分类和处理 (~6小时)
+   - 定义错误类型（Transient/Permanent/Unknown）
+   - 错误分类逻辑
+   - 针对不同错误的处理策略
+   - 错误通知（集成到现有通知系统）
 
-【下一步任务】
-请帮我生成以下文档（方案 A 执行计划）：
+🔲 Day 4: 性能监控框架 (~6小时)
+   - 执行时间监控（任务级、工作流级）
+   - 资源使用监控（内存、CPU）
+   - 性能指标收集
+   - 性能报告生成
 
-1. 完整执行计划 (v2/PHASE3_MIGRATION_PLAN.md)
-   - 6 周详细路线图
-   - Week 1-2: Orchestrator + Executor 核心
-   - Week 3: Approval + Notification 系统
-   - Week 4: Performance Monitoring 框架
-   - Week 5: Subagent 系统完善
-   - Week 6: 集成测试和文档
+【关键文件】
+- 重试机制: v2/crates/agent-workflow/src/workflow/retry.rs
+- 状态持久化: v2/crates/agent-storage/src/repository/workflow.rs
+- Migration: v2/crates/agent-storage/migrations/006_*.sql
+- 项目结构: v1/ (Python), v2/ (Rust), v3/ (C# 规划)
 
-2. 技术交接文档 (v2/HANDOFF_PHASE3.md)
-   - Python Workflow 系统详细剖析（16 个文件）
-   - Rust 技术选型（petgraph, tokio, ratatui）
-   - 数据库 schema 设计
-   - API 兼容性考虑
-   - 测试策略
-
-3. Week 1 详细任务清单 (可直接执行的代码示例)
-   - Day 1: 模型定义（Workflow, Task, TaskStatus）
-   - Day 2: DAG 依赖解析（petgraph 集成）
-   - Day 3: 任务执行器（重试、超时）
-   - Day 4: 集成测试
-   - Day 5: 文档和验收
-
-【关键文件位置】
-- Python Workflow: src/workflow/
-- Rust V2: v2/crates/agent-workflow/
-- 差距分析: MIGRATION_GAP_ANALYSIS.md
-- Week 1 计划: v2/MIGRATION_WEEK1_PLAN.md
-- 项目指南: CLAUDE.md
-
-【验证命令】
+【快速启动】
 cd v2/
-cargo test --workspace  # 验证当前测试状态
-cargo build --release   # 验证构建正常
+git checkout feature/workflow-migration
+cargo test -p agent-workflow  # 应该 112 passed
+cargo test -p agent-storage   # 应该 9 passed
+
+【下一步】
+实现 Week 4 Day 3: 错误分类和处理系统
+- 新文件: v2/crates/agent-workflow/src/workflow/errors.rs
+- 修改: executor.rs 集成错误分类
+- 测试: error_handling_test.rs
 
 【技术要点】
-- 使用 petgraph 做 DAG 图结构
-- 使用 tokio::task 做并行调度
-- 参考 Python 版本的 API 设计，保持一致性
-- 优先实现核心功能，审批 UI 等可以后续优化
-
-请基于以上信息，生成完整的 Phase 3 迁移计划和交接文档。
+- 参考 Python 版本: v1/src/workflow/executor.py
+- 使用 thiserror 做错误定义
+- 集成到现有重试和通知系统
+- 保持 API 向后兼容
