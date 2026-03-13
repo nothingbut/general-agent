@@ -37,8 +37,10 @@ use std::sync::Arc;
 use tokio::sync::RwLock;
 use anyhow::{Result, bail};
 
-use super::models::{Workflow, Task, WorkflowResult, TaskStatus, WorkflowStatus};
+use super::models::{Workflow, Task, WorkflowResult, TaskStatus};
 use super::executor::TaskExecutor;
+use crate::approval::{ApprovalManager, ApprovalStrategy};
+use crate::notification::{NotificationManager, Notification, NotificationPriority};
 
 /// 工作流控制状态
 #[derive(Debug, Clone, PartialEq)]
@@ -57,6 +59,8 @@ pub enum ControlState {
 pub struct WorkflowOrchestrator {
     /// 工作流 ID
     workflow_id: String,
+    /// 工作流名称
+    workflow_name: String,
     /// DAG 图结构 (节点=TaskID)
     /// 用于循环检测和拓扑排序
     #[allow(dead_code)]
@@ -69,6 +73,10 @@ pub struct WorkflowOrchestrator {
     node_map: HashMap<String, NodeIndex>,
     /// 控制状态（用于取消和暂停）
     control_state: Arc<RwLock<ControlState>>,
+    /// 审批管理器（可选）
+    approval_manager: Option<Arc<ApprovalManager>>,
+    /// 通知管理器（可选）
+    notification_manager: Option<Arc<NotificationManager>>,
 }
 
 impl std::fmt::Debug for WorkflowOrchestrator {
@@ -105,6 +113,7 @@ impl WorkflowOrchestrator {
         let mut task_map = HashMap::new();
         let mut node_map = HashMap::new();
         let workflow_id = workflow.id.clone();
+        let workflow_name = workflow.name.clone();
 
         // 1. 添加所有任务节点
         for task in workflow.tasks {
@@ -132,11 +141,26 @@ impl WorkflowOrchestrator {
 
         Ok(Self {
             workflow_id,
+            workflow_name,
             graph,
             task_map,
             node_map,
             control_state: Arc::new(RwLock::new(ControlState::Running)),
+            approval_manager: None,
+            notification_manager: None,
         })
+    }
+
+    /// 设置审批管理器
+    pub fn with_approval_manager(mut self, manager: Arc<ApprovalManager>) -> Self {
+        self.approval_manager = Some(manager);
+        self
+    }
+
+    /// 设置通知管理器
+    pub fn with_notification_manager(mut self, manager: Arc<NotificationManager>) -> Self {
+        self.notification_manager = Some(manager);
+        self
     }
 
     /// 请求取消工作流
@@ -213,6 +237,46 @@ impl WorkflowOrchestrator {
         self.task_map.len()
     }
 
+    /// 发送通知（如果配置了通知管理器）
+    async fn send_notification(&self, notification: Notification) {
+        if let Some(manager) = &self.notification_manager {
+            manager.send(&notification).await;
+        }
+    }
+
+    /// 请求任务审批（如果配置了审批管理器）
+    ///
+    /// 注意：当前简化实现，所有任务都使用 Auto 策略（自动批准）。
+    /// 未来可以根据任务类型或配置选择不同的审批策略。
+    async fn request_task_approval(&self, task: &Task) -> Result<bool> {
+        if let Some(manager) = &self.approval_manager {
+            // 创建审批请求（使用 Auto 策略）
+            let request = manager
+                .request_approval(
+                    task.id.clone(),
+                    self.workflow_id.clone(),
+                    ApprovalStrategy::Auto, // 默认自动批准
+                    serde_json::json!({
+                        "task_name": task.name,
+                        "task_type": format!("{:?}", task.task_type),
+                    }),
+                )
+                .await?;
+
+            // 处理审批
+            let response = manager.process_approval(&request).await?;
+
+            // 检查审批决策
+            use crate::approval::ApprovalDecision;
+            match response.decision {
+                ApprovalDecision::Approved | ApprovalDecision::Modified(_) => Ok(true),
+                ApprovalDecision::Rejected => Ok(false),
+            }
+        } else {
+            Ok(true) // 没有审批管理器，默认批准
+        }
+    }
+
     /// 执行整个工作流
     ///
     /// 按照 DAG 依赖关系，批次执行所有任务：
@@ -257,17 +321,52 @@ impl WorkflowOrchestrator {
         let mut completed = Vec::new();
         let mut results = HashMap::new();
 
+        // 发送工作流开始通知
+        self.send_notification(
+            Notification::new(
+                &self.workflow_id,
+                "workflow",
+                "工作流开始",
+                &format!("开始执行工作流: {}", self.workflow_name),
+            )
+            .with_priority(NotificationPriority::Normal),
+        )
+        .await;
+
         loop {
             // 0. 检查控制状态
             let state = self.control_state.read().await.clone();
             match state {
                 ControlState::CancelRequested => {
+                    // 发送取消通知
+                    self.send_notification(
+                        Notification::new(
+                            &self.workflow_id,
+                            "workflow",
+                            "工作流已取消",
+                            &format!("工作流 {} 已被用户取消", self.workflow_name),
+                        )
+                        .with_priority(NotificationPriority::High),
+                    )
+                    .await;
                     bail!("Workflow cancelled by user");
                 }
                 ControlState::PauseRequested => {
                     // 设置为已暂停状态
                     let mut state = self.control_state.write().await;
                     *state = ControlState::Paused;
+
+                    // 发送暂停通知
+                    self.send_notification(
+                        Notification::new(
+                            &self.workflow_id,
+                            "workflow",
+                            "工作流已暂停",
+                            &format!("工作流 {} 已暂停，可调用 resume() 恢复", self.workflow_name),
+                        )
+                        .with_priority(NotificationPriority::Normal),
+                    )
+                    .await;
                     bail!("Workflow paused by user");
                 }
                 ControlState::Paused => {
@@ -291,8 +390,52 @@ impl WorkflowOrchestrator {
                 }
             }
 
-            // 2. 并行执行所有就绪任务
-            let handles: Vec<_> = ready_tasks
+            // 2. 对每个就绪任务进行审批检查
+            let mut approved_tasks = Vec::new();
+            for task_id in &ready_tasks {
+                let task = self.get_task(task_id).unwrap();
+
+                // 请求审批
+                match self.request_task_approval(task).await {
+                    Ok(approved) => {
+                        if approved {
+                            approved_tasks.push(task_id.clone());
+
+                            // 发送任务开始通知
+                            let priority = NotificationPriority::from_tool_name(&task.name);
+                            self.send_notification(
+                                Notification::new(
+                                    &self.workflow_id,
+                                    &task.id,
+                                    "任务开始",
+                                    &format!("任务 {} 开始执行", task.name),
+                                )
+                                .with_priority(priority),
+                            )
+                            .await;
+                        } else {
+                            // 审批被拒绝
+                            self.send_notification(
+                                Notification::new(
+                                    &self.workflow_id,
+                                    &task.id,
+                                    "任务被拒绝",
+                                    &format!("任务 {} 的审批被拒绝", task.name),
+                                )
+                                .with_priority(NotificationPriority::High),
+                            )
+                            .await;
+                            bail!("Task {} approval rejected", task.name);
+                        }
+                    }
+                    Err(e) => {
+                        bail!("Task {} approval failed: {}", task.name, e);
+                    }
+                }
+            }
+
+            // 3. 并行执行所有已批准的任务
+            let handles: Vec<_> = approved_tasks
                 .iter()
                 .map(|task_id| {
                     let task = self.get_task(task_id).unwrap().clone();
@@ -302,17 +445,46 @@ impl WorkflowOrchestrator {
                 })
                 .collect();
 
-            // 3. 等待所有任务完成
+            // 4. 等待所有任务完成
             let task_results = join_all(handles).await;
 
-            // 4. 处理结果
+            // 5. 处理结果
             for result in task_results {
                 match result {
                     Ok(task_result) => {
                         if task_result.status == TaskStatus::Completed {
                             completed.push(task_result.task_id.clone());
+
+                            // 发送任务完成通知
+                            let task = self.get_task(&task_result.task_id).unwrap();
+                            self.send_notification(
+                                Notification::new(
+                                    &self.workflow_id,
+                                    &task.id,
+                                    "任务完成",
+                                    &format!("任务 {} 已成功完成", task.name),
+                                )
+                                .with_priority(NotificationPriority::Normal),
+                            )
+                            .await;
                         } else {
-                            // 任务失败，整个工作流失败
+                            // 任务失败，发送失败通知
+                            let task = self.get_task(&task_result.task_id).unwrap();
+                            self.send_notification(
+                                Notification::new(
+                                    &self.workflow_id,
+                                    &task.id,
+                                    "任务失败",
+                                    &format!(
+                                        "任务 {} 执行失败: {}",
+                                        task.name,
+                                        task_result.error.as_deref().unwrap_or("未知错误")
+                                    ),
+                                )
+                                .with_priority(NotificationPriority::Critical),
+                            )
+                            .await;
+
                             let task_id = task_result.task_id.clone();
                             results.insert(task_id.clone(), task_result);
                             bail!("Task {} failed", task_id);
@@ -326,6 +498,22 @@ impl WorkflowOrchestrator {
                 }
             }
         }
+
+        // 发送工作流完成通知
+        self.send_notification(
+            Notification::new(
+                &self.workflow_id,
+                "workflow",
+                "工作流完成",
+                &format!(
+                    "工作流 {} 已成功完成，共执行 {} 个任务",
+                    self.workflow_name,
+                    completed.len()
+                ),
+            )
+            .with_priority(NotificationPriority::Normal),
+        )
+        .await;
 
         Ok(WorkflowResult {
             workflow_id: self.workflow_id.clone(),
