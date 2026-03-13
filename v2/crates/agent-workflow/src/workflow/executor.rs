@@ -26,6 +26,7 @@ use std::sync::Arc;
 
 use super::models::*;
 use super::retry::{RetryHistory, RetryAttempt};
+use super::errors::ErrorClassifier;
 
 /// MCP 客户端管理器 - 管理多个 MCP 服务器连接
 #[derive(Clone)]
@@ -69,6 +70,8 @@ pub struct TaskExecutor {
     skill_registry: Option<Arc<agent_skills::SkillRegistry>>,
     /// MCP 客户端管理器（可选）
     mcp_manager: Option<MCPClientManager>,
+    /// 错误分类器
+    error_classifier: ErrorClassifier,
 }
 
 impl TaskExecutor {
@@ -78,6 +81,7 @@ impl TaskExecutor {
             llm_client: None,
             skill_registry: None,
             mcp_manager: None,
+            error_classifier: ErrorClassifier::default(),
         }
     }
 
@@ -87,6 +91,7 @@ impl TaskExecutor {
             llm_client: Some(llm_client),
             skill_registry: None,
             mcp_manager: None,
+            error_classifier: ErrorClassifier::default(),
         }
     }
 
@@ -96,6 +101,7 @@ impl TaskExecutor {
             llm_client: None,
             skill_registry: Some(skill_registry),
             mcp_manager: None,
+            error_classifier: ErrorClassifier::default(),
         }
     }
 
@@ -105,6 +111,7 @@ impl TaskExecutor {
             llm_client: None,
             skill_registry: None,
             mcp_manager: Some(mcp_manager),
+            error_classifier: ErrorClassifier::default(),
         }
     }
 
@@ -118,6 +125,7 @@ impl TaskExecutor {
             llm_client: Some(llm_client),
             skill_registry: Some(skill_registry),
             mcp_manager: Some(mcp_manager),
+            error_classifier: ErrorClassifier::default(),
         }
     }
 
@@ -136,45 +144,81 @@ impl TaskExecutor {
         self.mcp_manager = Some(mcp_manager);
     }
 
+    /// 设置错误分类器
+    pub fn set_error_classifier(&mut self, classifier: ErrorClassifier) {
+        self.error_classifier = classifier;
+    }
+
+    /// 创建带自定义错误分类器的执行器
+    pub fn with_error_classifier(mut self, classifier: ErrorClassifier) -> Self {
+        self.error_classifier = classifier;
+        self
+    }
+
     /// 执行单个任务
     pub async fn execute_task(&self, task: &Task) -> TaskResult {
         let start = std::time::Instant::now();
 
         // 带重试的执行
-        let (result, retry_history) = self.execute_task_with_retry(task).await;
+        let (result, retry_history, error_classification) = self.execute_task_with_retry(task).await;
 
         let elapsed = start.elapsed().as_millis() as u64;
 
         match result {
             Ok(output) => TaskResult::success_with_retries(task.id.clone(), output, elapsed, retry_history),
-            Err(e) => TaskResult::failure_with_retries(task.id.clone(), e.to_string(), elapsed, retry_history),
+            Err(e) => {
+                if let Some(classification) = error_classification {
+                    TaskResult::failure_with_classification(
+                        task.id.clone(),
+                        e.to_string(),
+                        elapsed,
+                        retry_history,
+                        classification,
+                    )
+                } else {
+                    TaskResult::failure_with_retries(task.id.clone(), e.to_string(), elapsed, retry_history)
+                }
+            }
         }
     }
 
-    /// 执行任务（带重试机制）
+    /// 执行任务（带重试机制和错误分类）
     ///
-    /// 返回 (结果, 重试历史)
-    async fn execute_task_with_retry(&self, task: &Task) -> (Result<String>, RetryHistory) {
+    /// 返回 (结果, 重试历史, 错误分类)
+    async fn execute_task_with_retry(
+        &self,
+        task: &Task,
+    ) -> (Result<String>, RetryHistory, Option<super::errors::ErrorClassificationInfo>) {
         let mut retry_history = RetryHistory::new();
         let retry_strategy = &task.config.retry_strategy;
         let retry_condition = &task.config.retry_condition;
 
         // 第一次尝试
         match self.execute_task_once_with_timeout(task).await {
-            Ok(output) => return (Ok(output), retry_history),
+            Ok(output) => return (Ok(output), retry_history, None),
             Err(e) => {
-                // 检查是否应该重试
-                if !retry_condition.should_retry(&e.to_string()) {
-                    return (Err(e), retry_history);
+                let error_msg = e.to_string();
+
+                // 使用错误分类器分析错误
+                let error_classification = self.error_classifier.classify_with_info(&error_msg);
+
+                // 检查是否应该重试（结合 RetryCondition 和错误分类）
+                let should_retry_by_condition = retry_condition.should_retry(&error_msg);
+                let should_retry_by_classification = error_classification.should_retry;
+
+                // 两者都认为应该重试，才重试
+                if !should_retry_by_condition || !should_retry_by_classification {
+                    return (Err(e), retry_history, Some(error_classification));
                 }
 
                 // 如果策略不允许重试
                 if retry_strategy.max_retries() == 0 {
-                    return (Err(e), retry_history);
+                    return (Err(e), retry_history, Some(error_classification));
                 }
 
                 // 开始重试
                 let mut last_error = e;
+                let mut last_classification = error_classification;
 
                 for attempt in 1..=retry_strategy.max_retries() {
                     // 计算延迟
@@ -193,12 +237,21 @@ impl TaskExecutor {
 
                         // 再次尝试
                         match self.execute_task_once_with_timeout(task).await {
-                            Ok(output) => return (Ok(output), retry_history),
+                            Ok(output) => return (Ok(output), retry_history, None),
                             Err(e) => {
+                                let error_msg = e.to_string();
+
+                                // 重新分类错误
+                                last_classification = self.error_classifier.classify_with_info(&error_msg);
+
                                 // 检查是否应该继续重试
-                                if !retry_condition.should_retry(&e.to_string()) {
-                                    return (Err(e), retry_history);
+                                let should_retry_by_condition = retry_condition.should_retry(&error_msg);
+                                let should_retry_by_classification = last_classification.should_retry;
+
+                                if !should_retry_by_condition || !should_retry_by_classification {
+                                    return (Err(e), retry_history, Some(last_classification));
                                 }
+
                                 last_error = e;
                             }
                         }
@@ -207,7 +260,7 @@ impl TaskExecutor {
 
                 // 达到最大重试次数
                 retry_history.mark_max_retries_reached();
-                (Err(last_error), retry_history)
+                (Err(last_error), retry_history, Some(last_classification))
             }
         }
     }

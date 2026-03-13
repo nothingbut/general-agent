@@ -31,6 +31,7 @@ use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 
 use super::retry::{RetryStrategy, RetryCondition, RetryHistory};
+use super::errors::ErrorClassificationInfo;
 
 /// 工作流定义
 ///
@@ -337,6 +338,8 @@ pub struct TaskResult {
     pub execution_time_ms: u64,
     /// 重试历史
     pub retry_history: RetryHistory,
+    /// 错误分类信息（失败时）
+    pub error_classification: Option<ErrorClassificationInfo>,
 }
 
 impl TaskResult {
@@ -349,6 +352,7 @@ impl TaskResult {
             error: None,
             execution_time_ms,
             retry_history: RetryHistory::new(),
+            error_classification: None,
         }
     }
 
@@ -361,6 +365,7 @@ impl TaskResult {
             error: Some(error),
             execution_time_ms,
             retry_history: RetryHistory::new(),
+            error_classification: None,
         }
     }
 
@@ -378,6 +383,7 @@ impl TaskResult {
             error: None,
             execution_time_ms,
             retry_history,
+            error_classification: None,
         }
     }
 
@@ -395,6 +401,26 @@ impl TaskResult {
             error: Some(error),
             execution_time_ms,
             retry_history,
+            error_classification: None,
+        }
+    }
+
+    /// 创建带错误分类的失败结果
+    pub fn failure_with_classification(
+        task_id: String,
+        error: String,
+        execution_time_ms: u64,
+        retry_history: RetryHistory,
+        error_classification: ErrorClassificationInfo,
+    ) -> Self {
+        Self {
+            task_id,
+            status: TaskStatus::Failed(error.clone()),
+            output: None,
+            error: Some(error),
+            execution_time_ms,
+            retry_history,
+            error_classification: Some(error_classification),
         }
     }
 }

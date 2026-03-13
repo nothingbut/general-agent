@@ -1,24 +1,48 @@
-继续 General Agent V2 Workflow 迁移 - Week 4 Day 3
+继续 General Agent V2 Workflow 迁移 - Week 4 Day 3 完成
 
 【当前状态】
 ✅ Week 1-2: Orchestrator + Executor 核心 (100%)
 ✅ Week 3: Approval + Notification 系统 (100%)
 ✅ Week 4 Day 1: 重试机制 (100%) - 921 行代码，20 个测试
 ✅ Week 4 Day 2: 状态持久化 (100%) - 800 行代码，9 个测试
+✅ Week 4 Day 3: 错误分类和处理 (100%) - 650 行代码，12 个测试
 ✅ 代码库重组: Python→v1/, 创建 v3/ 目录
 
 【分支和测试】
 - 分支: feature/workflow-migration
-- 总测试: 112 passed (agent-workflow)
-- 最新提交: 24416043 (v3 目录创建)
+- 总测试: 257 passed (包括新增的 12 个错误分类测试)
+- 最新提交: 未提交（刚完成 Day 3）
+
+【Week 4 Day 3 完成内容】
+✅ 错误分类器 (ErrorClassifier)
+   - 支持 Transient/Permanent/Unknown 三种错误类别
+   - 内置常见错误关键词（网络、权限、参数等）
+   - 支持自定义关键词和规则
+
+✅ 错误分类信息 (ErrorClassificationInfo)
+   - 错误类别
+   - 是否应该重试
+   - 处理建议
+   - 匹配的关键词
+
+✅ 错误处理策略 (ErrorHandlingStrategy)
+   - 针对不同类别的重试次数配置
+   - 永久错误停止工作流选项
+   - 通知策略配置
+
+✅ Executor 集成
+   - TaskExecutor 集成 ErrorClassifier
+   - execute_task_with_retry 增强错误分类逻辑
+   - TaskResult 新增 error_classification 字段
+   - 重试判断结合 RetryCondition 和错误分类
+
+✅ 测试覆盖
+   - 12 个单元测试和集成测试
+   - 涵盖临时/永久/未知错误分类
+   - 自定义分类器测试
+   - 与重试机制集成测试
 
 【Week 4 剩余任务】
-🔲 Day 3: 错误分类和处理 (~6小时)
-   - 定义错误类型（Transient/Permanent/Unknown）
-   - 错误分类逻辑
-   - 针对不同错误的处理策略
-   - 错误通知（集成到现有通知系统）
-
 🔲 Day 4: 性能监控框架 (~6小时)
    - 执行时间监控（任务级、工作流级）
    - 资源使用监控（内存、CPU）
@@ -28,20 +52,25 @@
 【关键文件】
 - 重试机制: v2/crates/agent-workflow/src/workflow/retry.rs
 - 状态持久化: v2/crates/agent-storage/src/repository/workflow.rs
+- 错误分类: v2/crates/agent-workflow/src/workflow/errors.rs (新增)
+- 执行器: v2/crates/agent-workflow/src/workflow/executor.rs (已增强)
 - Migration: v2/crates/agent-storage/migrations/006_*.sql
 - 项目结构: v1/ (Python), v2/ (Rust), v3/ (C# 规划)
 
 【快速启动】
 cd v2/
 git checkout feature/workflow-migration
-cargo test -p agent-workflow  # 应该 112 passed
+cargo test -p agent-workflow  # 应该 257 passed
 cargo test -p agent-storage   # 应该 9 passed
 
+# 测试错误分类
+cargo test -p agent-workflow --test error_classification_test
+
 【下一步】
-实现 Week 4 Day 3: 错误分类和处理系统
-- 新文件: v2/crates/agent-workflow/src/workflow/errors.rs
-- 修改: executor.rs 集成错误分类
-- 测试: error_handling_test.rs
+实现 Week 4 Day 4: 性能监控框架
+- 新文件: v2/crates/agent-workflow/src/workflow/performance.rs
+- 修改: executor.rs, orchestrator.rs 集成性能监控
+- 测试: performance_monitoring_test.rs
 
 【技术要点】
 - 参考 Python 版本: v1/src/workflow/executor.py
