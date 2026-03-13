@@ -22,17 +22,63 @@
 
 use tokio::time::{timeout, Duration};
 use anyhow::{Result, bail};
+use std::sync::Arc;
 
 use super::models::*;
 
 /// 任务执行器
 #[derive(Clone)]
-pub struct TaskExecutor;
+pub struct TaskExecutor {
+    /// LLM 客户端（可选）
+    llm_client: Option<Arc<agent_llm::AnthropicClient>>,
+    /// Skills 注册表（可选）
+    skill_registry: Option<Arc<agent_skills::SkillRegistry>>,
+}
 
 impl TaskExecutor {
-    /// 创建新的执行器
+    /// 创建新的执行器（无依赖）
     pub fn new() -> Self {
-        Self
+        Self {
+            llm_client: None,
+            skill_registry: None,
+        }
+    }
+
+    /// 创建带 LLM 客户端的执行器
+    pub fn with_llm_client(llm_client: Arc<agent_llm::AnthropicClient>) -> Self {
+        Self {
+            llm_client: Some(llm_client),
+            skill_registry: None,
+        }
+    }
+
+    /// 创建带 Skills 注册表的执行器
+    pub fn with_skill_registry(skill_registry: Arc<agent_skills::SkillRegistry>) -> Self {
+        Self {
+            llm_client: None,
+            skill_registry: Some(skill_registry),
+        }
+    }
+
+    /// 创建完整配置的执行器
+    pub fn with_dependencies(
+        llm_client: Arc<agent_llm::AnthropicClient>,
+        skill_registry: Arc<agent_skills::SkillRegistry>,
+    ) -> Self {
+        Self {
+            llm_client: Some(llm_client),
+            skill_registry: Some(skill_registry),
+        }
+    }
+
+    /// 设置 LLM 客户端
+    pub fn set_llm_client(&mut self, llm_client: Arc<agent_llm::AnthropicClient>) {
+        self.llm_client = Some(llm_client);
+    }
+
+    /// 设置 Skills 注册表
+    pub fn set_skill_registry(&mut self, skill_registry: Arc<agent_skills::SkillRegistry>) {
+        self.skill_registry = Some(skill_registry);
     }
 
     /// 执行单个任务
@@ -93,7 +139,7 @@ impl TaskExecutor {
                 self.execute_llm_call(prompt, model.as_deref(), *temperature, *max_tokens).await
             }
             TaskType::SkillExecution { skill_name, params } => {
-                bail!("SkillExecution not implemented yet: {} {:?}", skill_name, params)
+                self.execute_skill_execution(skill_name, params.as_ref()).await
             }
             TaskType::MCPToolCall { server_name, tool_name, params } => {
                 bail!("MCPToolCall not implemented yet: {}:{} {:?}", server_name, tool_name, params)
@@ -116,12 +162,18 @@ impl TaskExecutor {
             models::{Message, MessageRole},
             traits::llm::{CompletionRequest, LLMClient},
         };
-        use agent_llm::AnthropicClient;
         use uuid::Uuid;
 
-        // 创建 LLM 客户端
-        let client = AnthropicClient::from_env()
-            .map_err(|e| anyhow::anyhow!("Failed to create LLM client: {}", e))?;
+        // 获取 LLM 客户端
+        let client = if let Some(ref client) = self.llm_client {
+            client.clone()
+        } else {
+            // 如果没有预设客户端，尝试从环境变量创建
+            Arc::new(
+                agent_llm::AnthropicClient::from_env()
+                    .map_err(|e| anyhow::anyhow!("Failed to create LLM client: {}. Set ANTHROPIC_API_KEY or configure executor with llm_client.", e))?
+            )
+        };
 
         // 构建消息
         let session_id = Uuid::new_v4(); // 临时会话 ID
@@ -145,6 +197,56 @@ impl TaskExecutor {
             .map_err(|e| anyhow::anyhow!("LLM call failed: {}", e))?;
 
         Ok(response.content)
+    }
+
+    /// 执行 Skills 技能
+    async fn execute_skill_execution(
+        &self,
+        skill_name: &str,
+        params: Option<&serde_json::Value>,
+    ) -> Result<String> {
+        use agent_skills::SkillExecutionContext;
+        use std::collections::HashMap;
+
+        // 获取 Skills 注册表
+        let registry = self.skill_registry.as_ref()
+            .ok_or_else(|| anyhow::anyhow!("Skill registry not configured. Use TaskExecutor::with_skill_registry()"))?;
+
+        // 获取技能定义
+        let skill = registry.get(skill_name)
+            .map_err(|e| anyhow::anyhow!("Failed to get skill '{}': {}", skill_name, e))?;
+
+        // 解析参数
+        let parameters: HashMap<String, String> = if let Some(params) = params {
+            // 将 JSON 参数转换为 HashMap<String, String>
+            params.as_object()
+                .ok_or_else(|| anyhow::anyhow!("Skill parameters must be a JSON object"))?
+                .iter()
+                .map(|(k, v)| {
+                    let value = match v {
+                        serde_json::Value::String(s) => s.clone(),
+                        serde_json::Value::Number(n) => n.to_string(),
+                        serde_json::Value::Bool(b) => b.to_string(),
+                        _ => v.to_string(),
+                    };
+                    (k.clone(), value)
+                })
+                .collect()
+        } else {
+            HashMap::new()
+        };
+
+        // 创建执行上下文
+        let context = SkillExecutionContext::new(skill.clone(), parameters);
+
+        // 验证参数
+        context.validate()
+            .map_err(|e| anyhow::anyhow!("Skill parameter validation failed: {}", e))?;
+
+        // 构建提示词
+        let prompt = context.build_prompt();
+
+        Ok(prompt)
     }
 }
 
@@ -183,7 +285,7 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn test_execute_unimplemented_skill() {
+    async fn test_execute_skill_without_registry() {
         let executor = TaskExecutor::new();
 
         let task = Task::new(
@@ -198,7 +300,12 @@ mod tests {
         let result = executor.execute_task(&task).await;
         assert!(matches!(result.status, TaskStatus::Failed(_)));
         assert!(result.error.is_some());
-        assert!(result.error.unwrap().contains("not implemented"));
+        let error = result.error.unwrap();
+        assert!(
+            error.contains("registry not configured"),
+            "Expected 'registry not configured' in error, got: {}",
+            error
+        );
     }
 
     #[tokio::test]
@@ -227,5 +334,104 @@ mod tests {
         assert!(result.output.is_some());
         let output = result.output.unwrap();
         assert!(output.contains("4"), "Expected '4' in output, got: {}", output);
+    }
+
+    #[tokio::test]
+    async fn test_execute_skill() {
+        use agent_skills::{SkillDefinition, SkillParameter, SkillRegistry};
+        use std::sync::Arc;
+
+        // 创建测试技能
+        let mut skill = SkillDefinition::new(
+            "greeting".to_string(),
+            "Greet the user".to_string(),
+        );
+        skill.content = "Hello {name}! Your age is {age}.".to_string();
+        skill.parameters.push(SkillParameter::new(
+            "name".to_string(),
+            "string".to_string(),
+            true,
+            "User's name".to_string(),
+        ));
+        skill.parameters.push(SkillParameter::new(
+            "age".to_string(),
+            "number".to_string(),
+            true,
+            "User's age".to_string(),
+        ));
+
+        // 创建注册表并注册技能
+        let mut registry = SkillRegistry::new();
+        registry.register(skill);
+
+        // 创建执行器
+        let executor = TaskExecutor::with_skill_registry(Arc::new(registry));
+
+        // 创建任务
+        let task = Task::new(
+            "test",
+            "Test Skill",
+            TaskType::SkillExecution {
+                skill_name: "greeting".to_string(),
+                params: Some(serde_json::json!({
+                    "name": "Alice",
+                    "age": "25"
+                })),
+            },
+        );
+
+        // 执行任务
+        let result = executor.execute_task(&task).await;
+        assert_eq!(result.status, TaskStatus::Completed);
+        assert!(result.output.is_some());
+        let output = result.output.unwrap();
+        assert_eq!(output, "Hello Alice! Your age is 25.");
+    }
+
+    #[tokio::test]
+    async fn test_execute_skill_missing_parameter() {
+        use agent_skills::{SkillDefinition, SkillParameter, SkillRegistry};
+        use std::sync::Arc;
+
+        // 创建测试技能
+        let mut skill = SkillDefinition::new(
+            "greeting".to_string(),
+            "Greet the user".to_string(),
+        );
+        skill.content = "Hello {name}!".to_string();
+        skill.parameters.push(SkillParameter::new(
+            "name".to_string(),
+            "string".to_string(),
+            true,
+            "User's name".to_string(),
+        ));
+
+        // 创建注册表并注册技能
+        let mut registry = SkillRegistry::new();
+        registry.register(skill);
+
+        // 创建执行器
+        let executor = TaskExecutor::with_skill_registry(Arc::new(registry));
+
+        // 创建任务（缺少必需参数）
+        let task = Task::new(
+            "test",
+            "Test Skill",
+            TaskType::SkillExecution {
+                skill_name: "greeting".to_string(),
+                params: None, // 缺少必需参数
+            },
+        );
+
+        // 执行任务
+        let result = executor.execute_task(&task).await;
+        assert!(matches!(result.status, TaskStatus::Failed(_)));
+        assert!(result.error.is_some());
+        let error = result.error.unwrap();
+        assert!(
+            error.contains("missing"),
+            "Expected 'missing' in error, got: {}",
+            error
+        );
     }
 }

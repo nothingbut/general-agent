@@ -10,7 +10,7 @@ Rust 实现的工作流编排系统，支持 DAG 依赖解析和并行任务执�
 - ✅ 任务重试机制（指数退避）
 - ✅ 超时控制
 - ✅ **LLM 调用集成** (Week 2 Day 1 完成)
-- ⏳ Skills 技能执行（计划中）
+- ✅ **Skills 技能执行** (Week 2 Day 2 完成)
 - ⏳ MCP 工具调用（计划中）
 - ⏳ 取消和暂停支持（计划中）
 
@@ -90,13 +90,80 @@ async fn main() -> anyhow::Result<()> {
 }
 ```
 
+### Skills 工作流
+
+```rust
+use agent_workflow::workflow::*;
+use agent_skills::{SkillDefinition, SkillParameter, SkillRegistry};
+use std::sync::Arc;
+
+#[tokio::main]
+async fn main() -> anyhow::Result<()> {
+    // 创建技能定义
+    let mut skill = SkillDefinition::new(
+        "greeting".to_string(),
+        "Generate a greeting message".to_string(),
+    );
+    skill.content = "Hello, {name}! Welcome to {place}.".to_string();
+    skill.parameters.push(SkillParameter::new(
+        "name".to_string(),
+        "string".to_string(),
+        true,
+        "User's name".to_string(),
+    ));
+    skill.parameters.push(
+        SkillParameter::new(
+            "place".to_string(),
+            "string".to_string(),
+            false,
+            "Place name".to_string(),
+        )
+        .with_default("our community".to_string()),
+    );
+
+    // 注册技能
+    let mut registry = SkillRegistry::new();
+    registry.register(skill);
+
+    // 创建执行器
+    let executor = TaskExecutor::with_skill_registry(Arc::new(registry));
+
+    // 创建工作流
+    let mut workflow = Workflow::new("skill-workflow", "Skills Workflow");
+
+    let task = Task::new(
+        "greeting",
+        "Generate Greeting",
+        TaskType::SkillExecution {
+            skill_name: "greeting".to_string(),
+            params: Some(serde_json::json!({
+                "name": "Alice",
+                "place": "the team"
+            })),
+        },
+    );
+
+    workflow.add_task(task);
+
+    // 执行工作流
+    let orchestrator = WorkflowOrchestrator::new(workflow)?;
+    let result = orchestrator.execute(&executor).await?;
+
+    println!("Result: {:?}", result.task_results["greeting"].output);
+    // 输出: "Hello, Alice! Welcome to the team."
+
+    Ok(())
+}
+```
+
 ### 运行示例
 
 ```bash
-# 设置 API Key
-export ANTHROPIC_API_KEY=sk-ant-xxx
+# 运行 Skills 工作流示例
+cargo run --example skill_workflow
 
-# 运行示例
+# 运行 LLM 工作流示例（需要 API Key）
+export ANTHROPIC_API_KEY=sk-ant-xxx
 cargo run --example llm_workflow
 ```
 
@@ -123,13 +190,55 @@ TaskType::LLMCall {
 
 ### SkillExecution - 技能执行
 
-执行预定义的技能（计划中）。
+执行预定义的技能模板。
 
 ```rust
 TaskType::SkillExecution {
     skill_name: "my_skill".to_string(),
     params: Some(json!({"key": "value"})),
 }
+```
+
+**参数**:
+- `skill_name` (必需): 技能名称（可以是短名称或完整名称 `namespace:name`）
+- `params` (可选): 技能参数（JSON 对象）
+
+**技能定义**:
+技能使用 Markdown + YAML frontmatter 格式定义，或通过代码创建：
+
+```rust
+let mut skill = SkillDefinition::new(
+    "email".to_string(),
+    "Generate email template".to_string(),
+);
+skill.content = "To: {recipient}\n\n{message}".to_string();
+skill.parameters.push(SkillParameter::new(
+    "recipient".to_string(),
+    "string".to_string(),
+    true,
+    "Recipient's name".to_string(),
+));
+skill.parameters.push(SkillParameter::new(
+    "message".to_string(),
+    "string".to_string(),
+    true,
+    "Message content".to_string(),
+));
+```
+
+**默认值**:
+技能参数可以有默认值：
+
+```rust
+skill.parameters.push(
+    SkillParameter::new(
+        "tone".to_string(),
+        "string".to_string(),
+        false,
+        "Message tone".to_string(),
+    )
+    .with_default("friendly".to_string()),
+);
 ```
 
 ### MCPToolCall - MCP 工具调用
@@ -184,6 +293,9 @@ cargo test -p agent-workflow
 # 运行特定测试
 cargo test -p agent-workflow test_simple_workflow_execution
 
+# 运行 Skills 工作流测试
+cargo test -p agent-workflow --test skill_workflow_test
+
 # 运行 LLM 集成测试（需要 API Key）
 export ANTHROPIC_API_KEY=sk-ant-xxx
 cargo test -p agent-workflow --test llm_workflow_test -- --ignored
@@ -201,9 +313,11 @@ agent-workflow/
 │       └── mod.rs
 ├── tests/
 │   ├── workflow_integration.rs  # 集成测试
-│   └── llm_workflow_test.rs     # LLM 测试
+│   ├── llm_workflow_test.rs     # LLM 测试
+│   └── skill_workflow_test.rs   # Skills 测试
 └── examples/
-    └── llm_workflow.rs           # LLM 示例
+    ├── llm_workflow.rs           # LLM 示例
+    └── skill_workflow.rs         # Skills 示例
 ```
 
 ## 开发进度
@@ -218,7 +332,7 @@ agent-workflow/
 
 ### Week 2 (进行中)
 - ✅ Day 1: LLM 调用集成
-- ⏳ Day 2: Skills 技能执行
+- ✅ Day 2: Skills 技能执行
 - ⏳ Day 3: MCP 工具调用
 - ⏳ Day 4: 持久化支持
 - ⏳ Day 5: 取消和暂停
