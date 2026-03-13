@@ -237,6 +237,16 @@ impl WorkflowOrchestrator {
         self.task_map.len()
     }
 
+    /// 获取工作流 ID
+    pub fn workflow_id(&self) -> &str {
+        &self.workflow_id
+    }
+
+    /// 获取工作流名称
+    pub fn workflow_name(&self) -> &str {
+        &self.workflow_name
+    }
+
     /// 发送通知（如果配置了通知管理器）
     async fn send_notification(&self, notification: Notification) {
         if let Some(manager) = &self.notification_manager {
