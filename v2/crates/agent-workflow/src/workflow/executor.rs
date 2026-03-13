@@ -1,4 +1,24 @@
 //! 任务执行器 - 执行单个任务
+//!
+//! 本模块实现了任务执行器，负责：
+//! - 执行不同类型的任务
+//! - 超时控制
+//! - 重试机制（指数退避）
+//! - 错误处理
+//!
+//! # 示例
+//!
+//! ```rust
+//! use agent_workflow::workflow::*;
+//!
+//! # tokio_test::block_on(async {
+//! let executor = TaskExecutor::new();
+//! let task = Task::new("test", "Test Task", TaskType::Custom("demo".to_string()));
+//!
+//! let result = executor.execute_task(&task).await;
+//! assert_eq!(result.status, TaskStatus::Completed);
+//! # });
+//! ```
 
 use tokio::time::{timeout, Duration};
 use anyhow::{Result, bail};

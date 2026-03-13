@@ -1,10 +1,45 @@
 //! Workflow 核心数据模型
+//!
+//! 本模块定义了工作流系统的核心数据结构：
+//! - [`Workflow`] - 工作流定义
+//! - [`Task`] - 任务定义
+//! - [`TaskType`] - 任务类型枚举
+//! - [`TaskConfig`] - 任务配置
+//! - [`TaskStatus`] - 任务状态
+//! - [`WorkflowResult`] - 工作流执行结果
+//! - [`TaskResult`] - 任务执行结果
+//!
+//! # 示例
+//!
+//! ```rust
+//! use agent_workflow::workflow::*;
+//!
+//! // 创建工作流
+//! let mut workflow = Workflow::new("my-workflow", "My Workflow");
+//!
+//! // 添加任务
+//! let task_a = Task::new("task-a", "Task A", TaskType::Custom("test".to_string()));
+//! let task_b = Task::new("task-b", "Task B", TaskType::Custom("test".to_string()))
+//!     .with_dependency("task-a");
+//!
+//! workflow.add_task(task_a);
+//! workflow.add_task(task_b);
+//! ```
 
 use chrono::{DateTime, Utc};
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 
 /// 工作流定义
+///
+/// 包含一组有依赖关系的任务，形成 DAG（有向无环图）。
+///
+/// # 字段
+///
+/// - `id` - 工作流唯一标识符
+/// - `name` - 工作流名称
+/// - `tasks` - 任务列表
+/// - `created_at` - 创建时间
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct Workflow {
     pub id: String,
@@ -31,6 +66,31 @@ impl Workflow {
 }
 
 /// 任务定义
+///
+/// 工作流中的单个任务单元，可以指定依赖关系。
+///
+/// # 字段
+///
+/// - `id` - 任务唯一标识符
+/// - `name` - 任务名称
+/// - `task_type` - 任务类型（LLM调用、技能执行等）
+/// - `dependencies` - 依赖的任务 ID 列表
+/// - `config` - 任务配置（重试、超时等）
+/// - `metadata` - 额外的元数据
+///
+/// # 示例
+///
+/// ```rust
+/// use agent_workflow::workflow::*;
+///
+/// let task = Task::new("task-1", "Task 1", TaskType::Custom("test".to_string()))
+///     .with_dependency("task-0")
+///     .with_config(TaskConfig {
+///         retry_count: 3,
+///         timeout_secs: 30,
+///         priority: 1,
+///     });
+/// ```
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct Task {
     pub id: String,
@@ -68,28 +128,32 @@ impl Task {
 }
 
 /// 任务类型
+///
+/// 定义任务的执行类型，决定使用哪个执行器。
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
 pub enum TaskType {
-    /// LLM 调用
+    /// LLM 调用 - 调用大语言模型
     LLMCall,
-    /// Skills 技能执行
+    /// Skills 技能执行 - 执行预定义的技能
     SkillExecution,
-    /// MCP 工具调用
+    /// MCP 工具调用 - 调用 MCP 服务器的工具
     MCPToolCall,
-    /// 子工作流
+    /// 子工作流 - 嵌套执行另一个工作流
     Subworkflow,
-    /// 自定义任务（用于测试）
+    /// 自定义任务 - 自定义逻辑（主要用于测试）
     Custom(String),
 }
 
 /// 任务配置
+///
+/// 控制任务执行的行为参数。
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct TaskConfig {
-    /// 重试次数
+    /// 重试次数 - 任务失败后的最大重试次数
     pub retry_count: u32,
-    /// 超时时间（秒）
+    /// 超时时间（秒）- 单次执行的超时限制
     pub timeout_secs: u64,
-    /// 优先级
+    /// 优先级 - 数值越大优先级越高（暂未实现）
     pub priority: i32,
 }
 
@@ -104,35 +168,50 @@ impl Default for TaskConfig {
 }
 
 /// 任务状态
+///
+/// 表示任务的执行状态，遵循状态机转换：
+/// `Pending` → `Running` → `Completed` | `Failed` | `Cancelled`
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
 pub enum TaskStatus {
-    /// 等待执行
+    /// 等待执行 - 初始状态或依赖未满足
     Pending,
-    /// 执行中
+    /// 执行中 - 正在执行
     Running,
-    /// 执行成功
+    /// 执行成功 - 任务完成
     Completed,
-    /// 执行失败
+    /// 执行失败 - 包含错误信息
     Failed(String),
-    /// 已取消
+    /// 已取消 - 被用户或系统取消
     Cancelled,
 }
 
 /// 工作流执行结果
+///
+/// 包含工作流的完整执行结果和统计信息。
 #[derive(Debug)]
 pub struct WorkflowResult {
+    /// 工作流 ID
     pub workflow_id: String,
+    /// 所有任务的执行结果（TaskID -> TaskResult）
     pub task_results: HashMap<String, TaskResult>,
+    /// 总执行时间（毫秒）
     pub execution_time_ms: u64,
 }
 
 /// 任务执行结果
+///
+/// 单个任务的执行结果，包含状态、输出和错误信息。
 #[derive(Debug, Clone)]
 pub struct TaskResult {
+    /// 任务 ID
     pub task_id: String,
+    /// 任务状态
     pub status: TaskStatus,
+    /// 任务输出（成功时）
     pub output: Option<String>,
+    /// 错误信息（失败时）
     pub error: Option<String>,
+    /// 执行时间（毫秒）
     pub execution_time_ms: u64,
 }
 

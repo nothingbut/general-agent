@@ -1,26 +1,78 @@
 //! Workflow 编排器 - DAG 依赖解析和任务调度
+//!
+//! 本模块实现了基于 DAG（有向无环图）的工作流编排器，负责：
+//! - 解析任务依赖关系
+//! - 检测循环依赖
+//! - 计算可执行任务
+//! - 并行调度任务执行
+//!
+//! # 示例
+//!
+//! ```rust
+//! use agent_workflow::workflow::*;
+//!
+//! # tokio_test::block_on(async {
+//! // 创建工作流
+//! let mut workflow = Workflow::new("test", "Test Workflow");
+//! let mut task_a = Task::new("A", "Task A", TaskType::Custom("test".to_string()));
+//! let mut task_b = Task::new("B", "Task B", TaskType::Custom("test".to_string()));
+//! task_b.dependencies.push("A".to_string());
+//!
+//! workflow.add_task(task_a);
+//! workflow.add_task(task_b);
+//!
+//! // 创建编排器并执行
+//! let orchestrator = WorkflowOrchestrator::new(workflow).unwrap();
+//! let executor = TaskExecutor::new();
+//! let result = orchestrator.execute(&executor).await.unwrap();
+//!
+//! assert_eq!(result.task_results.len(), 2);
+//! # });
+//! ```
 
 use petgraph::Graph;
 use petgraph::graph::NodeIndex;
 use std::collections::HashMap;
 use anyhow::{Result, bail};
 
-use super::models::{Workflow, Task, WorkflowResult, TaskResult, TaskStatus};
+use super::models::{Workflow, Task, WorkflowResult, TaskStatus};
 use super::executor::TaskExecutor;
 
 /// 工作流编排器
 #[derive(Debug)]
 pub struct WorkflowOrchestrator {
     /// DAG 图结构 (节点=TaskID)
+    /// 用于循环检测和拓扑排序
+    #[allow(dead_code)]
     graph: Graph<String, ()>,
     /// 任务映射表 (TaskID -> Task)
     task_map: HashMap<String, Task>,
     /// 节点映射表 (TaskID -> NodeIndex)
+    /// 用于构建 DAG 时的节点查找
+    #[allow(dead_code)]
     node_map: HashMap<String, NodeIndex>,
 }
 
 impl WorkflowOrchestrator {
     /// 从工作流创建编排器
+    ///
+    /// 构建 DAG 图结构并验证依赖关系。
+    ///
+    /// # 错误
+    ///
+    /// - 如果存在循环依赖，返回错误
+    /// - 如果依赖的任务不存在，返回错误
+    ///
+    /// # 示例
+    ///
+    /// ```rust
+    /// use agent_workflow::workflow::*;
+    ///
+    /// let mut workflow = Workflow::new("test", "Test");
+    /// workflow.add_task(Task::new("A", "Task A", TaskType::Custom("test".to_string())));
+    ///
+    /// let orchestrator = WorkflowOrchestrator::new(workflow).unwrap();
+    /// ```
     pub fn new(workflow: Workflow) -> Result<Self> {
         let mut graph = Graph::new();
         let mut task_map = HashMap::new();
@@ -58,6 +110,16 @@ impl WorkflowOrchestrator {
     }
 
     /// 获取可以立即执行的任务（所有依赖已完成）
+    ///
+    /// 根据已完成的任务列表，计算哪些任务的依赖已全部满足。
+    ///
+    /// # 参数
+    ///
+    /// - `completed` - 已完成的任务 ID 列表
+    ///
+    /// # 返回
+    ///
+    /// 可以执行的任务 ID 列表（无特定顺序）
     pub fn get_ready_tasks(&self, completed: &[String]) -> Vec<String> {
         use std::collections::HashSet;
 
@@ -88,6 +150,41 @@ impl WorkflowOrchestrator {
     }
 
     /// 执行整个工作流
+    ///
+    /// 按照 DAG 依赖关系，批次执行所有任务：
+    /// 1. 计算可执行任务（依赖已满足）
+    /// 2. 并行执行该批次的所有任务
+    /// 3. 等待批次完成
+    /// 4. 重复直到所有任务完成
+    ///
+    /// # 参数
+    ///
+    /// - `executor` - 任务执行器
+    ///
+    /// # 返回
+    ///
+    /// 工作流执行结果，包含所有任务的结果和总执行时间
+    ///
+    /// # 错误
+    ///
+    /// - 如果任何任务失败，立即停止工作流并返回错误
+    /// - 如果工作流卡住（有任务但无法执行），返回错误
+    ///
+    /// # 示例
+    ///
+    /// ```rust
+    /// # use agent_workflow::workflow::*;
+    /// # tokio_test::block_on(async {
+    /// let mut workflow = Workflow::new("test", "Test");
+    /// workflow.add_task(Task::new("A", "Task A", TaskType::Custom("test".to_string())));
+    ///
+    /// let orchestrator = WorkflowOrchestrator::new(workflow).unwrap();
+    /// let executor = TaskExecutor::new();
+    /// let result = orchestrator.execute(&executor).await.unwrap();
+    ///
+    /// assert_eq!(result.task_results.len(), 1);
+    /// # });
+    /// ```
     pub async fn execute(&self, executor: &TaskExecutor) -> Result<WorkflowResult> {
         use std::time::Instant;
         use futures::future::join_all;
