@@ -11,7 +11,7 @@ Rust 实现的工作流编排系统，支持 DAG 依赖解析和并行任务执�
 - ✅ 超时控制
 - ✅ **LLM 调用集成** (Week 2 Day 1 完成)
 - ✅ **Skills 技能执行** (Week 2 Day 2 完成)
-- ⏳ MCP 工具调用（计划中）
+- ✅ **MCP 工具调用** (Week 2 Day 3 完成)
 - ⏳ 取消和暂停支持（计划中）
 
 ## 使用示例
@@ -333,7 +333,7 @@ agent-workflow/
 ### Week 2 (进行中)
 - ✅ Day 1: LLM 调用集成
 - ✅ Day 2: Skills 技能执行
-- ⏳ Day 3: MCP 工具调用
+- ✅ Day 3: MCP 工具调用
 - ⏳ Day 4: 持久化支持
 - ⏳ Day 5: 取消和暂停
 

@@ -26,6 +26,39 @@ use std::sync::Arc;
 
 use super::models::*;
 
+/// MCP 客户端管理器 - 管理多个 MCP 服务器连接
+#[derive(Clone)]
+pub struct MCPClientManager {
+    clients: Arc<tokio::sync::RwLock<std::collections::HashMap<String, Arc<dyn agent_core::traits::MCPClient>>>>,
+}
+
+impl MCPClientManager {
+    /// 创建新的管理器
+    pub fn new() -> Self {
+        Self {
+            clients: Arc::new(tokio::sync::RwLock::new(std::collections::HashMap::new())),
+        }
+    }
+
+    /// 添加 MCP 客户端
+    pub async fn add_client(&self, server_name: String, client: Arc<dyn agent_core::traits::MCPClient>) {
+        let mut clients = self.clients.write().await;
+        clients.insert(server_name, client);
+    }
+
+    /// 获取 MCP 客户端
+    pub async fn get_client(&self, server_name: &str) -> Option<Arc<dyn agent_core::traits::MCPClient>> {
+        let clients = self.clients.read().await;
+        clients.get(server_name).cloned()
+    }
+}
+
+impl Default for MCPClientManager {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 /// 任务执行器
 #[derive(Clone)]
 pub struct TaskExecutor {
@@ -33,6 +66,8 @@ pub struct TaskExecutor {
     llm_client: Option<Arc<agent_llm::AnthropicClient>>,
     /// Skills 注册表（可选）
     skill_registry: Option<Arc<agent_skills::SkillRegistry>>,
+    /// MCP 客户端管理器（可选）
+    mcp_manager: Option<MCPClientManager>,
 }
 
 impl TaskExecutor {
@@ -41,6 +76,7 @@ impl TaskExecutor {
         Self {
             llm_client: None,
             skill_registry: None,
+            mcp_manager: None,
         }
     }
 
@@ -49,6 +85,7 @@ impl TaskExecutor {
         Self {
             llm_client: Some(llm_client),
             skill_registry: None,
+            mcp_manager: None,
         }
     }
 
@@ -57,17 +94,29 @@ impl TaskExecutor {
         Self {
             llm_client: None,
             skill_registry: Some(skill_registry),
+            mcp_manager: None,
+        }
+    }
+
+    /// 创建带 MCP 管理器的执行器
+    pub fn with_mcp_manager(mcp_manager: MCPClientManager) -> Self {
+        Self {
+            llm_client: None,
+            skill_registry: None,
+            mcp_manager: Some(mcp_manager),
         }
     }
 
     /// 创建完整配置的执行器
-    pub fn with_dependencies(
+    pub fn with_all_dependencies(
         llm_client: Arc<agent_llm::AnthropicClient>,
         skill_registry: Arc<agent_skills::SkillRegistry>,
+        mcp_manager: MCPClientManager,
     ) -> Self {
         Self {
             llm_client: Some(llm_client),
             skill_registry: Some(skill_registry),
+            mcp_manager: Some(mcp_manager),
         }
     }
 
@@ -79,6 +128,11 @@ impl TaskExecutor {
     /// 设置 Skills 注册表
     pub fn set_skill_registry(&mut self, skill_registry: Arc<agent_skills::SkillRegistry>) {
         self.skill_registry = Some(skill_registry);
+    }
+
+    /// 设置 MCP 管理器
+    pub fn set_mcp_manager(&mut self, mcp_manager: MCPClientManager) {
+        self.mcp_manager = Some(mcp_manager);
     }
 
     /// 执行单个任务
@@ -142,7 +196,7 @@ impl TaskExecutor {
                 self.execute_skill_execution(skill_name, params.as_ref()).await
             }
             TaskType::MCPToolCall { server_name, tool_name, params } => {
-                bail!("MCPToolCall not implemented yet: {}:{} {:?}", server_name, tool_name, params)
+                self.execute_mcp_tool_call(server_name, tool_name, params.as_ref()).await
             }
             TaskType::Subworkflow { workflow_id } => {
                 bail!("Subworkflow not implemented yet: {}", workflow_id)
@@ -247,6 +301,41 @@ impl TaskExecutor {
         let prompt = context.build_prompt();
 
         Ok(prompt)
+    }
+
+    /// 执行 MCP 工具调用
+    async fn execute_mcp_tool_call(
+        &self,
+        server_name: &str,
+        tool_name: &str,
+        params: Option<&serde_json::Value>,
+    ) -> Result<String> {
+        use agent_core::traits::MCPClient;
+
+        // 获取 MCP 管理器
+        let manager = self.mcp_manager.as_ref()
+            .ok_or_else(|| anyhow::anyhow!("MCP manager not configured. Use TaskExecutor::with_mcp_manager()"))?;
+
+        // 获取指定服务器的客户端
+        let client = manager.get_client(server_name).await
+            .ok_or_else(|| anyhow::anyhow!("MCP server '{}' not found. Add it to the manager first.", server_name))?;
+
+        // 准备参数
+        let args = params.cloned().unwrap_or(serde_json::json!({}));
+
+        // 调用工具
+        let result = client.call_tool(tool_name, args).await
+            .map_err(|e| anyhow::anyhow!("MCP tool call failed: {}", e))?;
+
+        // 将结果转换为字符串
+        let output = if result.is_string() {
+            result.as_str().unwrap().to_string()
+        } else {
+            serde_json::to_string_pretty(&result)
+                .unwrap_or_else(|_| result.to_string())
+        };
+
+        Ok(output)
     }
 }
 
