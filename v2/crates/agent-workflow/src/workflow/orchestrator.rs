@@ -5,7 +5,8 @@ use petgraph::graph::NodeIndex;
 use std::collections::HashMap;
 use anyhow::{Result, bail};
 
-use super::models::{Workflow, Task};
+use super::models::{Workflow, Task, WorkflowResult, TaskResult, TaskStatus};
+use super::executor::TaskExecutor;
 
 /// 工作流编排器
 #[derive(Debug)]
@@ -84,6 +85,73 @@ impl WorkflowOrchestrator {
     /// 获取任务总数
     pub fn task_count(&self) -> usize {
         self.task_map.len()
+    }
+
+    /// 执行整个工作流
+    pub async fn execute(&self, executor: &TaskExecutor) -> Result<WorkflowResult> {
+        use std::time::Instant;
+        use futures::future::join_all;
+
+        let start = Instant::now();
+        let mut completed = Vec::new();
+        let mut results = HashMap::new();
+        let workflow_id = "workflow"; // TODO: 从 workflow 获取
+
+        loop {
+            // 1. 获取就绪任务
+            let ready_tasks = self.get_ready_tasks(&completed);
+
+            if ready_tasks.is_empty() {
+                // 检查是否全部完成
+                if completed.len() == self.task_map.len() {
+                    break; // 成功完成
+                } else {
+                    // 有任务但无法执行（不应该发生）
+                    bail!("Workflow stuck: some tasks cannot be executed");
+                }
+            }
+
+            // 2. 并行执行所有就绪任务
+            let handles: Vec<_> = ready_tasks
+                .iter()
+                .map(|task_id| {
+                    let task = self.get_task(task_id).unwrap().clone();
+                    let executor = executor.clone();
+
+                    tokio::spawn(async move { executor.execute_task(&task).await })
+                })
+                .collect();
+
+            // 3. 等待所有任务完成
+            let task_results = join_all(handles).await;
+
+            // 4. 处理结果
+            for result in task_results {
+                match result {
+                    Ok(task_result) => {
+                        if task_result.status == TaskStatus::Completed {
+                            completed.push(task_result.task_id.clone());
+                        } else {
+                            // 任务失败，整个工作流失败
+                            let task_id = task_result.task_id.clone();
+                            results.insert(task_id.clone(), task_result);
+                            bail!("Task {} failed", task_id);
+                        }
+
+                        results.insert(task_result.task_id.clone(), task_result);
+                    }
+                    Err(e) => {
+                        bail!("Task execution panicked: {}", e);
+                    }
+                }
+            }
+        }
+
+        Ok(WorkflowResult {
+            workflow_id: workflow_id.to_string(),
+            task_results: results,
+            execution_time_ms: start.elapsed().as_millis() as u64,
+        })
     }
 }
 
@@ -164,5 +232,86 @@ mod tests {
         let result = WorkflowOrchestrator::new(workflow);
         assert!(result.is_err());
         assert!(result.unwrap_err().to_string().contains("Dependency not found"));
+    }
+
+    #[tokio::test]
+    async fn test_execute_simple_workflow() {
+        // 创建简单工作流：A -> B -> C
+        let mut workflow = Workflow::new("test-wf", "Test Workflow");
+        workflow.add_task(create_test_task("A", vec![]));
+        workflow.add_task(create_test_task("B", vec!["A"]));
+        workflow.add_task(create_test_task("C", vec!["B"]));
+
+        let orch = WorkflowOrchestrator::new(workflow).unwrap();
+        let executor = TaskExecutor::new();
+
+        let result = orch.execute(&executor).await.unwrap();
+
+        // 验证所有任务完成
+        assert_eq!(result.task_results.len(), 3);
+        assert_eq!(
+            result.task_results["A"].status,
+            TaskStatus::Completed
+        );
+        assert_eq!(
+            result.task_results["B"].status,
+            TaskStatus::Completed
+        );
+        assert_eq!(
+            result.task_results["C"].status,
+            TaskStatus::Completed
+        );
+
+        // 验证执行时间合理（至少大于 0）
+        assert!(result.execution_time_ms > 0);
+    }
+
+    #[tokio::test]
+    async fn test_execute_parallel_workflow() {
+        // 创建并行工作流：A, B 并行 -> C 依赖 A+B
+        let mut workflow = Workflow::new("test-wf", "Test Workflow");
+        workflow.add_task(create_test_task("A", vec![]));
+        workflow.add_task(create_test_task("B", vec![]));
+        workflow.add_task(create_test_task("C", vec!["A", "B"]));
+
+        let orch = WorkflowOrchestrator::new(workflow).unwrap();
+        let executor = TaskExecutor::new();
+
+        let result = orch.execute(&executor).await.unwrap();
+
+        // 验证所有任务完成
+        assert_eq!(result.task_results.len(), 3);
+        for (task_id, task_result) in &result.task_results {
+            assert_eq!(
+                task_result.status,
+                TaskStatus::Completed,
+                "Task {} should be completed",
+                task_id
+            );
+        }
+    }
+
+    #[tokio::test]
+    async fn test_execute_complex_dag() {
+        // 创建复杂 DAG：
+        //     A
+        //    / \
+        //   B   C
+        //    \ /
+        //     D
+        let mut workflow = Workflow::new("test-wf", "Test Workflow");
+        workflow.add_task(create_test_task("A", vec![]));
+        workflow.add_task(create_test_task("B", vec!["A"]));
+        workflow.add_task(create_test_task("C", vec!["A"]));
+        workflow.add_task(create_test_task("D", vec!["B", "C"]));
+
+        let orch = WorkflowOrchestrator::new(workflow).unwrap();
+        let executor = TaskExecutor::new();
+
+        let result = orch.execute(&executor).await.unwrap();
+
+        // 验证所有任务完成
+        assert_eq!(result.task_results.len(), 4);
+        assert!(result.task_results.values().all(|r| r.status == TaskStatus::Completed));
     }
 }
