@@ -18,6 +18,7 @@ pub struct SubagentTask {
     session_id: Uuid,
     config: SubagentTaskConfig,
     state: Arc<DashMap<Uuid, SubagentState>>,
+    #[allow(dead_code)]
     progress_estimator: ProgressEstimator,
 }
 
@@ -82,6 +83,7 @@ impl SubagentTask {
     }
 
     /// Sends status updates to parent
+    #[allow(dead_code)]
     async fn send_status_update(&self) -> SubagentResult<()> {
         // Status updates handled via shared state
         Ok(())
