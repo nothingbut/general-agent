@@ -4,6 +4,7 @@ use super::config::TaskType;
 
 /// Progress estimation for subagent tasks using weighted moving average
 pub struct ProgressEstimator {
+    #[allow(dead_code)]
     task_type: TaskType,
     estimated_total_messages: usize,
     current_progress: f32,
