@@ -334,6 +334,11 @@ impl PerformanceMonitor {
         self.workflow_metrics.get(workflow_id)
     }
 
+    /// 获取所有工作流 ID 列表
+    pub fn get_all_workflow_ids(&self) -> Vec<String> {
+        self.workflow_metrics.keys().cloned().collect()
+    }
+
     /// 获取任务指标列表
     pub fn get_task_metrics(&self, workflow_id: &str) -> Option<&Vec<TaskMetrics>> {
         self.task_metrics.get(workflow_id)

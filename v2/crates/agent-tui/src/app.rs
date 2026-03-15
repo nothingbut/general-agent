@@ -4,17 +4,23 @@ use crate::{
     backend::{BackendCommand, BackendUpdate},
     event::{AppEvent, EventHandler},
     state::{AppState, FocusArea, MessageItem, SessionState},
-    ui::{self, SubagentOverlay},
+    ui::{self, PerformanceOverlay, SubagentOverlay},
     TuiResult,
 };
-use agent_workflow::subagent::{OrchestratorConfig, SubagentOrchestrator};
+use agent_workflow::{
+    subagent::{OrchestratorConfig, SubagentOrchestrator},
+    workflow::performance::PerformanceMonitor,
+};
 use crossterm::{
     event::{self, Event},
     terminal::{disable_raw_mode, enable_raw_mode, EnterAlternateScreen, LeaveAlternateScreen},
     ExecutableCommand,
 };
 use ratatui::{backend::CrosstermBackend, Terminal};
-use std::{io::{self, Stdout}, sync::Arc};
+use std::{
+    io::{self, Stdout},
+    sync::{Arc, Mutex},
+};
 use tokio::sync::mpsc;
 
 /// TUI 应用
@@ -36,6 +42,13 @@ pub struct TuiApp {
 
     /// Subagent overlay component
     subagent_overlay: SubagentOverlay,
+
+    /// Performance overlay component
+    performance_overlay: PerformanceOverlay,
+
+    /// Performance monitor
+    #[allow(dead_code)]
+    performance_monitor: Arc<Mutex<PerformanceMonitor>>,
 }
 
 impl TuiApp {
@@ -56,6 +69,10 @@ impl TuiApp {
         let orchestrator = Arc::new(SubagentOrchestrator::new(OrchestratorConfig::default()));
         let subagent_overlay = SubagentOverlay::new(orchestrator);
 
+        // Create performance monitor and overlay
+        let performance_monitor = Arc::new(Mutex::new(PerformanceMonitor::new()));
+        let performance_overlay = PerformanceOverlay::new(performance_monitor.clone());
+
         let app = Self {
             state: AppState::new(),
             terminal,
@@ -63,6 +80,8 @@ impl TuiApp {
             backend_rx,
             should_quit: false,
             subagent_overlay,
+            performance_overlay,
+            performance_monitor,
         };
 
         Ok((app, backend_cmd_rx))
@@ -86,6 +105,10 @@ impl TuiApp {
         let orchestrator = Arc::new(SubagentOrchestrator::new(OrchestratorConfig::default()));
         let subagent_overlay = SubagentOverlay::new(orchestrator);
 
+        // Create performance monitor and overlay
+        let performance_monitor = Arc::new(Mutex::new(PerformanceMonitor::new()));
+        let performance_overlay = PerformanceOverlay::new(performance_monitor.clone());
+
         let app = Self {
             state: AppState::new(),
             terminal,
@@ -93,6 +116,8 @@ impl TuiApp {
             backend_rx,
             should_quit: false,
             subagent_overlay,
+            performance_overlay,
+            performance_monitor,
         };
 
         Ok((app, backend_cmd_rx))
@@ -137,8 +162,9 @@ impl TuiApp {
             ui::render_input_box(f, layout.input_box, &self.state);
             ui::render_info_bar(f, layout.info_bar, &self.state);
 
-            // Render subagent overlay as top layer
+            // Render overlays as top layers
             self.subagent_overlay.render(f, f.size());
+            self.performance_overlay.render(f, f.size());
         })?;
 
         Ok(())
@@ -150,8 +176,25 @@ impl TuiApp {
 
         if event::poll(std::time::Duration::from_millis(100))? {
             if let Event::Key(key) = event::read()? {
-                // Check if overlay is visible and handle its events first
-                if self.subagent_overlay.is_visible() {
+                // Check if performance overlay is visible and handle its events first
+                if self.performance_overlay.is_visible() {
+                    match key.code {
+                        KeyCode::Esc => {
+                            self.performance_overlay.toggle_visible();
+                        }
+                        KeyCode::Tab => {
+                            self.performance_overlay.next_workflow();
+                        }
+                        KeyCode::Left => {
+                            self.performance_overlay.prev_workflow();
+                        }
+                        KeyCode::Right => {
+                            self.performance_overlay.next_workflow();
+                        }
+                        _ => {}
+                    }
+                } else if self.subagent_overlay.is_visible() {
+                    // Check if subagent overlay is visible
                     match key.code {
                         KeyCode::Esc => {
                             self.subagent_overlay.toggle_visible();
@@ -172,12 +215,24 @@ impl TuiApp {
                         _ => {}
                     }
                 } else {
-                    // Handle Ctrl+S to toggle overlay
-                    if key.modifiers.contains(KeyModifiers::CONTROL) && key.code == KeyCode::Char('s') {
-                        self.subagent_overlay.toggle_visible();
-                        // Set current session context
-                        if let Some(session_id) = self.current_session_id() {
-                            self.subagent_overlay.set_current_session(session_id);
+                    // Handle global hotkeys
+                    if key.modifiers.contains(KeyModifiers::CONTROL) {
+                        match key.code {
+                            KeyCode::Char('s') => {
+                                self.subagent_overlay.toggle_visible();
+                                // Set current session context
+                                if let Some(session_id) = self.current_session_id() {
+                                    self.subagent_overlay.set_current_session(session_id);
+                                }
+                            }
+                            KeyCode::Char('p') => {
+                                self.performance_overlay.toggle_visible();
+                            }
+                            _ => {
+                                if let Some(app_event) = EventHandler::map_key_event(key, self.state.focus) {
+                                    self.handle_app_event(app_event)?;
+                                }
+                            }
                         }
                     } else if let Some(app_event) = EventHandler::map_key_event(key, self.state.focus) {
                         // Handle normal app events
