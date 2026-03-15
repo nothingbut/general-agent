@@ -8,8 +8,8 @@ use ratatui::{
     Frame,
 };
 
-use crate::state::{AppState, MessageItem};
 use super::colors::AppColors;
+use crate::state::{AppState, MessageItem};
 
 /// 渲染聊天窗口
 pub fn render_chat_window(f: &mut Frame, area: Rect, state: &AppState) {
@@ -114,9 +114,7 @@ fn format_message(msg: &MessageItem) -> Vec<Line> {
         Line::from(vec![
             Span::styled(
                 format!("{}: ", msg.role),
-                Style::default()
-                    .fg(role_color)
-                    .add_modifier(Modifier::BOLD),
+                Style::default().fg(role_color).add_modifier(Modifier::BOLD),
             ),
             Span::raw(&msg.content),
         ]),

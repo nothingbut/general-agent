@@ -3,13 +3,13 @@
 //! 提供基于 Ratatui 的多会话对话界面
 
 pub mod app;
-pub mod state;
-pub mod event;
 pub mod backend;
+pub mod event;
+pub mod state;
 pub mod ui;
 
 pub use app::TuiApp;
-pub use state::{AppState, FocusArea, SessionState, SessionItem, MessageItem};
+pub use state::{AppState, FocusArea, MessageItem, SessionItem, SessionState};
 
 /// TUI 错误类型
 #[derive(Debug, thiserror::Error)]

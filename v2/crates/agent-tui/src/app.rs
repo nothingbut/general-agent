@@ -191,6 +191,15 @@ impl TuiApp {
                         KeyCode::Right => {
                             self.performance_overlay.next_workflow();
                         }
+                        KeyCode::Home => {
+                            self.performance_overlay.first_workflow();
+                        }
+                        KeyCode::End => {
+                            self.performance_overlay.last_workflow();
+                        }
+                        KeyCode::Char('r') | KeyCode::F(5) => {
+                            self.performance_overlay.refresh_cache();
+                        }
                         _ => {}
                     }
                 } else if self.subagent_overlay.is_visible() {
@@ -229,12 +238,16 @@ impl TuiApp {
                                 self.performance_overlay.toggle_visible();
                             }
                             _ => {
-                                if let Some(app_event) = EventHandler::map_key_event(key, self.state.focus) {
+                                if let Some(app_event) =
+                                    EventHandler::map_key_event(key, self.state.focus)
+                                {
                                     self.handle_app_event(app_event)?;
                                 }
                             }
                         }
-                    } else if let Some(app_event) = EventHandler::map_key_event(key, self.state.focus) {
+                    } else if let Some(app_event) =
+                        EventHandler::map_key_event(key, self.state.focus)
+                    {
                         // Handle normal app events
                         self.handle_app_event(app_event)?;
                     }
@@ -276,7 +289,8 @@ impl TuiApp {
 
                     // 加载消息
                     if let Some(session_id) = self.state.selected_session_id() {
-                        let _ = self.backend_tx
+                        let _ = self
+                            .backend_tx
                             .send(BackendCommand::LoadMessages { session_id });
                     }
                 } else if matches!(self.state.focus, FocusArea::InputBox) {
@@ -290,10 +304,8 @@ impl TuiApp {
                             });
 
                             self.state.clear_input();
-                            self.state.set_session_state(
-                                session_id,
-                                SessionState::WaitingResponse,
-                            );
+                            self.state
+                                .set_session_state(session_id, SessionState::WaitingResponse);
                         }
                     }
                 }
@@ -322,10 +334,8 @@ impl TuiApp {
                             });
 
                             self.state.clear_input();
-                            self.state.set_session_state(
-                                session_id,
-                                SessionState::WaitingResponse,
-                            );
+                            self.state
+                                .set_session_state(session_id, SessionState::WaitingResponse);
                         }
                     }
                 }
@@ -347,9 +357,9 @@ impl TuiApp {
                 // 只在会话列表焦点时触发
                 if matches!(self.state.focus, FocusArea::SessionList) {
                     let title = format!("会话 {}", chrono::Local::now().format("%m-%d %H:%M"));
-                    let _ = self.backend_tx.send(BackendCommand::CreateSession {
-                        title: Some(title)
-                    });
+                    let _ = self
+                        .backend_tx
+                        .send(BackendCommand::CreateSession { title: Some(title) });
                 }
             }
 
@@ -357,7 +367,8 @@ impl TuiApp {
                 // 只在会话列表焦点时触发
                 if matches!(self.state.focus, FocusArea::SessionList) {
                     if let Some(session_id) = self.state.selected_session_id() {
-                        let _ = self.backend_tx
+                        let _ = self
+                            .backend_tx
                             .send(BackendCommand::DeleteSession { session_id });
                     }
                 }
@@ -380,11 +391,15 @@ impl TuiApp {
             BackendUpdate::SessionsLoaded { sessions } => {
                 // 更新会话列表
                 for session in sessions {
-                    self.state.add_session(session.id, session.title.unwrap_or_default());
+                    self.state
+                        .add_session(session.id, session.title.unwrap_or_default());
                 }
             }
 
-            BackendUpdate::MessagesLoaded { session_id, messages } => {
+            BackendUpdate::MessagesLoaded {
+                session_id,
+                messages,
+            } => {
                 // 加载消息
                 for msg in messages {
                     self.state.add_message(
@@ -398,10 +413,14 @@ impl TuiApp {
                 }
             }
 
-            BackendUpdate::ParagraphComplete { session_id, paragraph } => {
+            BackendUpdate::ParagraphComplete {
+                session_id,
+                paragraph,
+            } => {
                 // 累积段落到缓冲区
                 self.state.append_streaming_content(session_id, &paragraph);
-                self.state.set_session_state(session_id, SessionState::Streaming);
+                self.state
+                    .set_session_state(session_id, SessionState::Streaming);
             }
 
             BackendUpdate::ResponseComplete { session_id } => {
@@ -433,9 +452,6 @@ impl Drop for TuiApp {
     fn drop(&mut self) {
         // 清理终端
         let _ = disable_raw_mode();
-        let _ = self
-            .terminal
-            .backend_mut()
-            .execute(LeaveAlternateScreen);
+        let _ = self.terminal.backend_mut().execute(LeaveAlternateScreen);
     }
 }

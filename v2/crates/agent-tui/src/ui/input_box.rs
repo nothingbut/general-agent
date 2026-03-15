@@ -8,8 +8,8 @@ use ratatui::{
     Frame,
 };
 
-use crate::state::{AppState, FocusArea};
 use super::colors::AppColors;
+use crate::state::{AppState, FocusArea};
 
 /// 渲染输入框
 pub fn render_input_box(f: &mut Frame, area: Rect, state: &AppState) {

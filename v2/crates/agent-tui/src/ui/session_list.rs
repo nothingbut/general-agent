@@ -8,8 +8,8 @@ use ratatui::{
     Frame,
 };
 
-use crate::state::{AppState, FocusArea, SessionState};
 use super::colors::AppColors;
+use crate::state::{AppState, FocusArea, SessionState};
 
 /// 渲染会话列表
 pub fn render_session_list(f: &mut Frame, area: Rect, state: &AppState) {
@@ -106,8 +106,8 @@ pub fn render_session_list(f: &mut Frame, area: Rect, state: &AppState) {
         Line::from(Span::raw("Enter: 选择")),
     ];
 
-    let help = ratatui::widgets::Paragraph::new(help_text)
-        .style(Style::default().fg(AppColors::NORMAL));
+    let help =
+        ratatui::widgets::Paragraph::new(help_text).style(Style::default().fg(AppColors::NORMAL));
 
     f.render_widget(help, help_area);
 }

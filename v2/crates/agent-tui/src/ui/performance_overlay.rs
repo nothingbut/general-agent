@@ -8,6 +8,7 @@ use ratatui::{
     widgets::{Block, Borders, Paragraph},
     Frame,
 };
+use std::cell::RefCell;
 use std::sync::{Arc, Mutex};
 
 /// Performance overlay component for displaying workflow performance metrics
@@ -20,6 +21,16 @@ pub struct PerformanceOverlay {
 
     /// Reference to the performance monitor
     monitor: Arc<Mutex<PerformanceMonitor>>,
+
+    /// Cached workflow list (to avoid frequent queries) - uses RefCell for interior mutability
+    cache: RefCell<WorkflowCache>,
+}
+
+/// Cache for workflow list
+struct WorkflowCache {
+    workflows: Vec<String>,
+    last_update: std::time::Instant,
+    duration: std::time::Duration,
 }
 
 impl PerformanceOverlay {
@@ -29,6 +40,11 @@ impl PerformanceOverlay {
             visible: false,
             selected_workflow_index: 0,
             monitor,
+            cache: RefCell::new(WorkflowCache {
+                workflows: Vec::new(),
+                last_update: std::time::Instant::now(),
+                duration: std::time::Duration::from_millis(500), // 500ms cache
+            }),
         }
     }
 
@@ -42,28 +58,61 @@ impl PerformanceOverlay {
         self.visible
     }
 
-    /// Get list of workflow IDs from the monitor
-    fn get_workflow_list(&self) -> Vec<String> {
+    /// Get list of workflow IDs from the monitor (with caching)
+    pub fn get_workflow_list(&self) -> Vec<String> {
+        let mut cache = self.cache.borrow_mut();
+
+        // Check if cache is still valid
+        if cache.last_update.elapsed() < cache.duration && !cache.workflows.is_empty() {
+            return cache.workflows.clone();
+        }
+
+        // Update cache with timeout handling
+        match self.monitor.lock() {
+            Ok(monitor) => {
+                cache.workflows = monitor.get_all_workflow_ids();
+                cache.last_update = std::time::Instant::now();
+                cache.workflows.clone()
+            }
+            Err(e) => {
+                eprintln!(
+                    "PerformanceOverlay: Failed to acquire monitor lock: {:?}",
+                    e
+                );
+                // Return cached data even if stale
+                cache.workflows.clone()
+            }
+        }
+    }
+
+    /// Force refresh the workflow list cache
+    pub fn refresh_cache(&self) {
         if let Ok(monitor) = self.monitor.lock() {
-            monitor.get_all_workflow_ids()
-        } else {
-            Vec::new()
+            let mut cache = self.cache.borrow_mut();
+            cache.workflows = monitor.get_all_workflow_ids();
+            cache.last_update = std::time::Instant::now();
         }
     }
 
     /// Get metrics for the currently selected workflow
-    fn get_current_metrics(&self) -> Option<WorkflowMetrics> {
+    pub fn get_current_metrics(&self) -> Option<WorkflowMetrics> {
         let workflows = self.get_workflow_list();
         if workflows.is_empty() {
             return None;
         }
 
+        // Ensure index is within bounds
         let workflow_id = &workflows[self.selected_workflow_index % workflows.len()];
 
-        if let Ok(monitor) = self.monitor.lock() {
-            monitor.get_workflow_metrics(workflow_id).cloned()
-        } else {
-            None
+        match self.monitor.lock() {
+            Ok(monitor) => monitor.get_workflow_metrics(workflow_id).cloned(),
+            Err(e) => {
+                eprintln!(
+                    "PerformanceOverlay: Failed to acquire monitor lock for metrics: {:?}",
+                    e
+                );
+                None
+            }
         }
     }
 
@@ -83,6 +132,22 @@ impl PerformanceOverlay {
                 .selected_workflow_index
                 .checked_sub(1)
                 .unwrap_or(count - 1);
+        }
+    }
+
+    /// Jump to first workflow (Home key)
+    pub fn first_workflow(&mut self) {
+        let count = self.get_workflow_list().len();
+        if count > 0 {
+            self.selected_workflow_index = 0;
+        }
+    }
+
+    /// Jump to last workflow (End key)
+    pub fn last_workflow(&mut self) {
+        let count = self.get_workflow_list().len();
+        if count > 0 {
+            self.selected_workflow_index = count - 1;
         }
     }
 
@@ -169,7 +234,9 @@ impl PerformanceOverlay {
                 Span::raw("状态: "),
                 Span::styled(
                     Self::format_status(&metrics),
-                    Style::default().fg(status_color).add_modifier(Modifier::BOLD),
+                    Style::default()
+                        .fg(status_color)
+                        .add_modifier(Modifier::BOLD),
                 ),
             ]),
         ];
@@ -204,7 +271,10 @@ impl PerformanceOverlay {
 
         let stats_lines = vec![
             Line::from(format!("平均: {:.2}ms", metrics.avg_task_duration_ms)),
-            Line::from(format!("中位数 (P50): {:.2}ms", metrics.median_task_duration_ms)),
+            Line::from(format!(
+                "中位数 (P50): {:.2}ms",
+                metrics.median_task_duration_ms
+            )),
             Line::from(format!("P95: {:.2}ms", metrics.p95_task_duration_ms)),
             Line::from(format!("P99: {:.2}ms", metrics.p99_task_duration_ms)),
         ];
@@ -248,6 +318,10 @@ impl PerformanceOverlay {
         let help_text = Paragraph::new(Line::from(vec![
             Span::styled("[Tab]", Style::default().fg(Color::Yellow)),
             Span::raw(" 切换  "),
+            Span::styled("[Home/End]", Style::default().fg(Color::Yellow)),
+            Span::raw(" 首/尾  "),
+            Span::styled("[R]", Style::default().fg(Color::Yellow)),
+            Span::raw(" 刷新  "),
             Span::styled("[Esc]", Style::default().fg(Color::Yellow)),
             Span::raw(" 关闭"),
         ]))

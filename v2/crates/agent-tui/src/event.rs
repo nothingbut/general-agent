@@ -1,7 +1,7 @@
 //! 事件处理
 
-use crossterm::event::{KeyCode, KeyEvent, KeyModifiers};
 use crate::state::FocusArea;
+use crossterm::event::{KeyCode, KeyEvent, KeyModifiers};
 
 /// 应用事件
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -53,7 +53,7 @@ impl EventHandler {
             _ => match focus {
                 FocusArea::SessionList => Self::map_session_list_key(key),
                 FocusArea::InputBox => Self::map_input_box_key(key),
-            }
+            },
         }
     }
 

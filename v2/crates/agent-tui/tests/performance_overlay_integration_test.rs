@@ -59,7 +59,11 @@ fn test_overlay_with_multiple_workflows() {
             mon.start_workflow(&wf_id, 3);
 
             for task_idx in 0..3 {
-                mon.start_task(&wf_id, format!("task-{}", task_idx), format!("Task {}", task_idx));
+                mon.start_task(
+                    &wf_id,
+                    format!("task-{}", task_idx),
+                    format!("Task {}", task_idx),
+                );
                 mon.complete_task(
                     &wf_id,
                     &format!("task-{}", task_idx),
@@ -103,7 +107,11 @@ fn test_overlay_with_failed_tasks() {
 
         mon.start_workflow("wf-with-failures", 5);
         for i in 0..5 {
-            mon.start_task("wf-with-failures", format!("task-{}", i), format!("Task {}", i));
+            mon.start_task(
+                "wf-with-failures",
+                format!("task-{}", i),
+                format!("Task {}", i),
+            );
             let status = if i == 2 { "failed" } else { "completed" };
             mon.complete_task(
                 "wf-with-failures",
@@ -144,6 +152,10 @@ fn test_overlay_metrics_calculations() {
                 0,
             );
         }
+
+        // 添加小延迟确保 workflow 有可测量的执行时间
+        std::thread::sleep(std::time::Duration::from_millis(10));
+
         mon.complete_workflow("metrics-test");
     }
 

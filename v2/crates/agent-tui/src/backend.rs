@@ -6,26 +6,16 @@ use uuid::Uuid;
 #[derive(Debug, Clone)]
 pub enum BackendUpdate {
     /// 段落完成（逐段显示）
-    ParagraphComplete {
-        session_id: Uuid,
-        paragraph: String,
-    },
+    ParagraphComplete { session_id: Uuid, paragraph: String },
 
     /// 响应完成
-    ResponseComplete {
-        session_id: Uuid,
-    },
+    ResponseComplete { session_id: Uuid },
 
     /// 错误
-    Error {
-        session_id: Uuid,
-        error: String,
-    },
+    Error { session_id: Uuid, error: String },
 
     /// 会话列表更新
-    SessionsLoaded {
-        sessions: Vec<SessionInfo>,
-    },
+    SessionsLoaded { sessions: Vec<SessionInfo> },
 
     /// 消息加载完成
     MessagesLoaded {
@@ -38,28 +28,19 @@ pub enum BackendUpdate {
 #[derive(Debug, Clone)]
 pub enum BackendCommand {
     /// 发送消息
-    SendMessage {
-        session_id: Uuid,
-        content: String,
-    },
+    SendMessage { session_id: Uuid, content: String },
 
     /// 创建会话
-    CreateSession {
-        title: Option<String>,
-    },
+    CreateSession { title: Option<String> },
 
     /// 删除会话
-    DeleteSession {
-        session_id: Uuid,
-    },
+    DeleteSession { session_id: Uuid },
 
     /// 加载会话列表
     LoadSessions,
 
     /// 加载消息
-    LoadMessages {
-        session_id: Uuid,
-    },
+    LoadMessages { session_id: Uuid },
 }
 
 /// 会话信息

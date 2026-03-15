@@ -35,7 +35,13 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         mon.start_workflow("wf-test-001", 10);
         for i in 0..10 {
             mon.start_task("wf-test-001", format!("task-{}", i), format!("Task {}", i));
-            mon.complete_task("wf-test-001", &format!("task-{}", i), "completed".to_string(), 50 + i * 10, 0);
+            mon.complete_task(
+                "wf-test-001",
+                &format!("task-{}", i),
+                "completed".to_string(),
+                50 + i * 10,
+                0,
+            );
         }
         mon.complete_workflow("wf-test-001");
 
@@ -43,7 +49,13 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         mon.start_workflow("wf-test-002", 20);
         for i in 0..12 {
             mon.start_task("wf-test-002", format!("task-{}", i), format!("Task {}", i));
-            mon.complete_task("wf-test-002", &format!("task-{}", i), "completed".to_string(), 30 + i * 5, 0);
+            mon.complete_task(
+                "wf-test-002",
+                &format!("task-{}", i),
+                "completed".to_string(),
+                30 + i * 5,
+                0,
+            );
         }
 
         // 工作流 3: 有失败的任务
@@ -55,7 +67,13 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
             } else {
                 "completed"
             };
-            mon.complete_task("wf-test-003", &format!("task-{}", i), status.to_string(), 40 + i * 8, if status == "failed" { 2 } else { 0 });
+            mon.complete_task(
+                "wf-test-003",
+                &format!("task-{}", i),
+                status.to_string(),
+                40 + i * 8,
+                if status == "failed" { 2 } else { 0 },
+            );
         }
         mon.complete_workflow("wf-test-003");
     }
@@ -107,18 +125,20 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
 
             let help_text = vec![
                 Line::from(""),
-                Line::from(vec![
-                    Span::styled("快捷键:", Style::default().fg(Color::Yellow)),
-                ]),
+                Line::from(vec![Span::styled(
+                    "快捷键:",
+                    Style::default().fg(Color::Yellow),
+                )]),
                 Line::from("  Ctrl+P: 打开/关闭性能监控面板"),
                 Line::from("  Tab: 切换工作流"),
                 Line::from("  Left/Right: 切换工作流"),
                 Line::from("  Esc: 关闭面板"),
                 Line::from("  Q: 退出程序"),
                 Line::from(""),
-                Line::from(vec![
-                    Span::styled("提示:", Style::default().fg(Color::Cyan)),
-                ]),
+                Line::from(vec![Span::styled(
+                    "提示:",
+                    Style::default().fg(Color::Cyan),
+                )]),
                 Line::from("  面板默认已打开，可以使用 Tab 键切换查看不同工作流的指标"),
             ];
 
@@ -150,7 +170,9 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                     }
                 } else {
                     // 面板关闭时的快捷键
-                    if key.modifiers.contains(KeyModifiers::CONTROL) && key.code == KeyCode::Char('p') {
+                    if key.modifiers.contains(KeyModifiers::CONTROL)
+                        && key.code == KeyCode::Char('p')
+                    {
                         overlay.toggle_visible();
                     } else if key.code == KeyCode::Char('q') {
                         should_quit = true;
