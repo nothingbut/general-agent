@@ -1,7 +1,7 @@
 //! 应用状态管理
 
-use uuid::Uuid;
 use std::collections::HashMap;
+use uuid::Uuid;
 
 /// 焦点区域
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]

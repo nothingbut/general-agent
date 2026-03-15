@@ -38,8 +38,8 @@ async fn main() -> Result<()> {
     let llm_client: Arc<dyn LLMClient> = Arc::new(OllamaClient::new(config)?);
 
     // 加载技能系统
-    let skills_dir = PathBuf::from(env!("CARGO_MANIFEST_DIR"))
-        .join("../agent-skills/examples/test_skills");
+    let skills_dir =
+        PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../agent-skills/examples/test_skills");
     let loader = SkillLoader::new(skills_dir)?;
     let skills = loader.load_all()?;
 
@@ -57,7 +57,7 @@ async fn main() -> Result<()> {
             llm_client.clone(),
             conversation_config,
         )
-        .with_skills(Arc::new(registry))
+        .with_skills(Arc::new(registry)),
     );
 
     // 创建通道
@@ -74,7 +74,10 @@ async fn main() -> Result<()> {
         if let Ok(sessions) = session_manager_clone.list_sessions(1, 0).await {
             if sessions.is_empty() {
                 // 创建默认会话
-                if let Ok(_) = session_manager_clone.create_session(Some("默认会话".to_string())).await {
+                if let Ok(_) = session_manager_clone
+                    .create_session(Some("默认会话".to_string()))
+                    .await
+                {
                     tracing::info!("创建默认会话");
                     // 刷新会话列表
                     if let Ok(sessions) = session_manager_clone.list_sessions(10, 0).await {
@@ -155,7 +158,10 @@ async fn run_backend(
                 }
             }
 
-            BackendCommand::SendMessage { session_id, content } => {
+            BackendCommand::SendMessage {
+                session_id,
+                content,
+            } => {
                 // 克隆以便在异步任务中使用
                 let flow = conversation_flow.clone();
                 let tx = update_tx.clone();

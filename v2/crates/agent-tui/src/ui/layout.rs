@@ -8,9 +8,9 @@ pub fn calculate_layout(area: Rect) -> AppLayout {
     let chunks = Layout::default()
         .direction(Direction::Vertical)
         .constraints([
-            Constraint::Length(1),      // 状态栏
-            Constraint::Min(0),         // 主体
-            Constraint::Length(1),      // 底部信息栏
+            Constraint::Length(1), // 状态栏
+            Constraint::Min(0),    // 主体
+            Constraint::Length(1), // 底部信息栏
         ])
         .split(area);
 
@@ -22,8 +22,8 @@ pub fn calculate_layout(area: Rect) -> AppLayout {
     let main_chunks = Layout::default()
         .direction(Direction::Horizontal)
         .constraints([
-            Constraint::Percentage(25),  // 会话列表
-            Constraint::Percentage(75),  // 聊天窗口
+            Constraint::Percentage(25), // 会话列表
+            Constraint::Percentage(75), // 聊天窗口
         ])
         .split(main_area);
 
@@ -34,8 +34,8 @@ pub fn calculate_layout(area: Rect) -> AppLayout {
     let chat_chunks = Layout::default()
         .direction(Direction::Vertical)
         .constraints([
-            Constraint::Min(0),         // 聊天窗口
-            Constraint::Length(3),      // 输入框
+            Constraint::Min(0),    // 聊天窗口
+            Constraint::Length(3), // 输入框
         ])
         .split(chat_area);
 

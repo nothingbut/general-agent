@@ -1,10 +1,7 @@
 //! Subagent overlay component for displaying subagent status
 
 use agent_workflow::subagent::{SubagentOrchestrator, SubagentState};
-use ratatui::{
-    layout::Rect,
-    Frame,
-};
+use ratatui::{layout::Rect, Frame};
 use std::sync::Arc;
 use uuid::Uuid;
 
@@ -119,13 +116,12 @@ impl SubagentOverlay {
                     Vec::new()
                 }
             }
-            ViewMode::Global => {
-                self.orchestrator
-                    .get_all_states()
-                    .into_iter()
-                    .map(|state| (state.session_id(), state))
-                    .collect()
-            }
+            ViewMode::Global => self
+                .orchestrator
+                .get_all_states()
+                .into_iter()
+                .map(|state| (state.session_id(), state))
+                .collect(),
         }
     }
 
@@ -190,12 +186,7 @@ impl SubagentOverlay {
 
                 // Format: [Session ID prefix] Status (Progress%)
                 let session_id_short = &session_id.to_string()[..8];
-                let content = format!(
-                    "[{}] {} ({}%)",
-                    session_id_short,
-                    status_str,
-                    progress_pct
-                );
+                let content = format!("[{}] {} ({}%)", session_id_short, status_str, progress_pct);
 
                 let style = if idx == self.selected_index {
                     Style::default()
@@ -215,18 +206,16 @@ impl SubagentOverlay {
         f.render_widget(list, chunks[0]);
 
         // Create help text
-        let help_text = vec![
-            Line::from(vec![
-                Span::styled("[↑/↓] ", Style::default().fg(Color::Yellow)),
-                Span::raw("Navigate  "),
-                Span::styled("[Enter] ", Style::default().fg(Color::Yellow)),
-                Span::raw("Details  "),
-                Span::styled("[Tab] ", Style::default().fg(Color::Yellow)),
-                Span::raw("Switch View  "),
-                Span::styled("[Esc] ", Style::default().fg(Color::Yellow)),
-                Span::raw("Close"),
-            ]),
-        ];
+        let help_text = vec![Line::from(vec![
+            Span::styled("[↑/↓] ", Style::default().fg(Color::Yellow)),
+            Span::raw("Navigate  "),
+            Span::styled("[Enter] ", Style::default().fg(Color::Yellow)),
+            Span::raw("Details  "),
+            Span::styled("[Tab] ", Style::default().fg(Color::Yellow)),
+            Span::raw("Switch View  "),
+            Span::styled("[Esc] ", Style::default().fg(Color::Yellow)),
+            Span::raw("Close"),
+        ])];
 
         let help_paragraph = Paragraph::new(help_text)
             .alignment(Alignment::Center)

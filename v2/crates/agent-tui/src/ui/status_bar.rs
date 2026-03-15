@@ -8,8 +8,8 @@ use ratatui::{
     Frame,
 };
 
-use crate::state::AppState;
 use super::colors::AppColors;
+use crate::state::AppState;
 
 /// 渲染顶部状态栏
 pub fn render_status_bar(f: &mut Frame, area: Rect, _state: &AppState) {
@@ -31,8 +31,7 @@ pub fn render_status_bar(f: &mut Frame, area: Rect, _state: &AppState) {
         ),
     ];
 
-    let paragraph = Paragraph::new(Line::from(spans))
-        .style(Style::default().fg(AppColors::NORMAL));
+    let paragraph = Paragraph::new(Line::from(spans)).style(Style::default().fg(AppColors::NORMAL));
 
     f.render_widget(paragraph, area);
 }
@@ -69,8 +68,7 @@ pub fn render_info_bar(f: &mut Frame, area: Rect, state: &AppState) {
         right_span,
     ];
 
-    let paragraph = Paragraph::new(Line::from(spans))
-        .style(Style::default().fg(AppColors::NORMAL));
+    let paragraph = Paragraph::new(Line::from(spans)).style(Style::default().fg(AppColors::NORMAL));
 
     f.render_widget(paragraph, area);
 }

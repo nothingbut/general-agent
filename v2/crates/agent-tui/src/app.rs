@@ -4,17 +4,23 @@ use crate::{
     backend::{BackendCommand, BackendUpdate},
     event::{AppEvent, EventHandler},
     state::{AppState, FocusArea, MessageItem, SessionState},
-    ui::{self, SubagentOverlay},
+    ui::{self, PerformanceOverlay, SubagentOverlay},
     TuiResult,
 };
-use agent_workflow::subagent::{OrchestratorConfig, SubagentOrchestrator};
+use agent_workflow::{
+    subagent::{OrchestratorConfig, SubagentOrchestrator},
+    workflow::performance::PerformanceMonitor,
+};
 use crossterm::{
     event::{self, Event},
     terminal::{disable_raw_mode, enable_raw_mode, EnterAlternateScreen, LeaveAlternateScreen},
     ExecutableCommand,
 };
 use ratatui::{backend::CrosstermBackend, Terminal};
-use std::{io::{self, Stdout}, sync::Arc};
+use std::{
+    io::{self, Stdout},
+    sync::{Arc, Mutex},
+};
 use tokio::sync::mpsc;
 
 /// TUI 应用
@@ -36,6 +42,13 @@ pub struct TuiApp {
 
     /// Subagent overlay component
     subagent_overlay: SubagentOverlay,
+
+    /// Performance overlay component
+    performance_overlay: PerformanceOverlay,
+
+    /// Performance monitor
+    #[allow(dead_code)]
+    performance_monitor: Arc<Mutex<PerformanceMonitor>>,
 }
 
 impl TuiApp {
@@ -56,6 +69,10 @@ impl TuiApp {
         let orchestrator = Arc::new(SubagentOrchestrator::new(OrchestratorConfig::default()));
         let subagent_overlay = SubagentOverlay::new(orchestrator);
 
+        // Create performance monitor and overlay
+        let performance_monitor = Arc::new(Mutex::new(PerformanceMonitor::new()));
+        let performance_overlay = PerformanceOverlay::new(performance_monitor.clone());
+
         let app = Self {
             state: AppState::new(),
             terminal,
@@ -63,6 +80,8 @@ impl TuiApp {
             backend_rx,
             should_quit: false,
             subagent_overlay,
+            performance_overlay,
+            performance_monitor,
         };
 
         Ok((app, backend_cmd_rx))
@@ -86,6 +105,10 @@ impl TuiApp {
         let orchestrator = Arc::new(SubagentOrchestrator::new(OrchestratorConfig::default()));
         let subagent_overlay = SubagentOverlay::new(orchestrator);
 
+        // Create performance monitor and overlay
+        let performance_monitor = Arc::new(Mutex::new(PerformanceMonitor::new()));
+        let performance_overlay = PerformanceOverlay::new(performance_monitor.clone());
+
         let app = Self {
             state: AppState::new(),
             terminal,
@@ -93,6 +116,8 @@ impl TuiApp {
             backend_rx,
             should_quit: false,
             subagent_overlay,
+            performance_overlay,
+            performance_monitor,
         };
 
         Ok((app, backend_cmd_rx))
@@ -137,8 +162,9 @@ impl TuiApp {
             ui::render_input_box(f, layout.input_box, &self.state);
             ui::render_info_bar(f, layout.info_bar, &self.state);
 
-            // Render subagent overlay as top layer
+            // Render overlays as top layers
             self.subagent_overlay.render(f, f.size());
+            self.performance_overlay.render(f, f.size());
         })?;
 
         Ok(())
@@ -150,8 +176,34 @@ impl TuiApp {
 
         if event::poll(std::time::Duration::from_millis(100))? {
             if let Event::Key(key) = event::read()? {
-                // Check if overlay is visible and handle its events first
-                if self.subagent_overlay.is_visible() {
+                // Check if performance overlay is visible and handle its events first
+                if self.performance_overlay.is_visible() {
+                    match key.code {
+                        KeyCode::Esc => {
+                            self.performance_overlay.toggle_visible();
+                        }
+                        KeyCode::Tab => {
+                            self.performance_overlay.next_workflow();
+                        }
+                        KeyCode::Left => {
+                            self.performance_overlay.prev_workflow();
+                        }
+                        KeyCode::Right => {
+                            self.performance_overlay.next_workflow();
+                        }
+                        KeyCode::Home => {
+                            self.performance_overlay.first_workflow();
+                        }
+                        KeyCode::End => {
+                            self.performance_overlay.last_workflow();
+                        }
+                        KeyCode::Char('r') | KeyCode::F(5) => {
+                            self.performance_overlay.refresh_cache();
+                        }
+                        _ => {}
+                    }
+                } else if self.subagent_overlay.is_visible() {
+                    // Check if subagent overlay is visible
                     match key.code {
                         KeyCode::Esc => {
                             self.subagent_overlay.toggle_visible();
@@ -172,14 +224,30 @@ impl TuiApp {
                         _ => {}
                     }
                 } else {
-                    // Handle Ctrl+S to toggle overlay
-                    if key.modifiers.contains(KeyModifiers::CONTROL) && key.code == KeyCode::Char('s') {
-                        self.subagent_overlay.toggle_visible();
-                        // Set current session context
-                        if let Some(session_id) = self.current_session_id() {
-                            self.subagent_overlay.set_current_session(session_id);
+                    // Handle global hotkeys
+                    if key.modifiers.contains(KeyModifiers::CONTROL) {
+                        match key.code {
+                            KeyCode::Char('s') => {
+                                self.subagent_overlay.toggle_visible();
+                                // Set current session context
+                                if let Some(session_id) = self.current_session_id() {
+                                    self.subagent_overlay.set_current_session(session_id);
+                                }
+                            }
+                            KeyCode::Char('p') => {
+                                self.performance_overlay.toggle_visible();
+                            }
+                            _ => {
+                                if let Some(app_event) =
+                                    EventHandler::map_key_event(key, self.state.focus)
+                                {
+                                    self.handle_app_event(app_event)?;
+                                }
+                            }
                         }
-                    } else if let Some(app_event) = EventHandler::map_key_event(key, self.state.focus) {
+                    } else if let Some(app_event) =
+                        EventHandler::map_key_event(key, self.state.focus)
+                    {
                         // Handle normal app events
                         self.handle_app_event(app_event)?;
                     }
@@ -221,7 +289,8 @@ impl TuiApp {
 
                     // 加载消息
                     if let Some(session_id) = self.state.selected_session_id() {
-                        let _ = self.backend_tx
+                        let _ = self
+                            .backend_tx
                             .send(BackendCommand::LoadMessages { session_id });
                     }
                 } else if matches!(self.state.focus, FocusArea::InputBox) {
@@ -235,10 +304,8 @@ impl TuiApp {
                             });
 
                             self.state.clear_input();
-                            self.state.set_session_state(
-                                session_id,
-                                SessionState::WaitingResponse,
-                            );
+                            self.state
+                                .set_session_state(session_id, SessionState::WaitingResponse);
                         }
                     }
                 }
@@ -267,10 +334,8 @@ impl TuiApp {
                             });
 
                             self.state.clear_input();
-                            self.state.set_session_state(
-                                session_id,
-                                SessionState::WaitingResponse,
-                            );
+                            self.state
+                                .set_session_state(session_id, SessionState::WaitingResponse);
                         }
                     }
                 }
@@ -292,9 +357,9 @@ impl TuiApp {
                 // 只在会话列表焦点时触发
                 if matches!(self.state.focus, FocusArea::SessionList) {
                     let title = format!("会话 {}", chrono::Local::now().format("%m-%d %H:%M"));
-                    let _ = self.backend_tx.send(BackendCommand::CreateSession {
-                        title: Some(title)
-                    });
+                    let _ = self
+                        .backend_tx
+                        .send(BackendCommand::CreateSession { title: Some(title) });
                 }
             }
 
@@ -302,7 +367,8 @@ impl TuiApp {
                 // 只在会话列表焦点时触发
                 if matches!(self.state.focus, FocusArea::SessionList) {
                     if let Some(session_id) = self.state.selected_session_id() {
-                        let _ = self.backend_tx
+                        let _ = self
+                            .backend_tx
                             .send(BackendCommand::DeleteSession { session_id });
                     }
                 }
@@ -325,11 +391,15 @@ impl TuiApp {
             BackendUpdate::SessionsLoaded { sessions } => {
                 // 更新会话列表
                 for session in sessions {
-                    self.state.add_session(session.id, session.title.unwrap_or_default());
+                    self.state
+                        .add_session(session.id, session.title.unwrap_or_default());
                 }
             }
 
-            BackendUpdate::MessagesLoaded { session_id, messages } => {
+            BackendUpdate::MessagesLoaded {
+                session_id,
+                messages,
+            } => {
                 // 加载消息
                 for msg in messages {
                     self.state.add_message(
@@ -343,10 +413,14 @@ impl TuiApp {
                 }
             }
 
-            BackendUpdate::ParagraphComplete { session_id, paragraph } => {
+            BackendUpdate::ParagraphComplete {
+                session_id,
+                paragraph,
+            } => {
                 // 累积段落到缓冲区
                 self.state.append_streaming_content(session_id, &paragraph);
-                self.state.set_session_state(session_id, SessionState::Streaming);
+                self.state
+                    .set_session_state(session_id, SessionState::Streaming);
             }
 
             BackendUpdate::ResponseComplete { session_id } => {
@@ -378,9 +452,6 @@ impl Drop for TuiApp {
     fn drop(&mut self) {
         // 清理终端
         let _ = disable_raw_mode();
-        let _ = self
-            .terminal
-            .backend_mut()
-            .execute(LeaveAlternateScreen);
+        let _ = self.terminal.backend_mut().execute(LeaveAlternateScreen);
     }
 }
