@@ -1,6 +1,7 @@
 <Solution>
   <Folder Name="/src/">
     <Project Path="src/GeneralAgent.Core/GeneralAgent.Core.csproj" />
+    <Project Path="src/GeneralAgent.Infrastructure/GeneralAgent.Infrastructure.csproj" />
   </Folder>
   <Folder Name="/tests/">
     <Project Path="tests/GeneralAgent.Core.Tests/GeneralAgent.Core.Tests.csproj" />
