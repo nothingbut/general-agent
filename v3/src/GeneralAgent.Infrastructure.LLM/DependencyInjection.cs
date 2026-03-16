@@ -24,13 +24,24 @@ public static class DependencyInjection
 
         // 为每个提供商注册 HttpClient
         var llmOptions = configuration.GetSection("LLM").Get<LLMOptions>();
-        if (llmOptions?.Providers is not null)
+        if (llmOptions?.Providers is not null && llmOptions.Providers.Count > 0)
         {
-            foreach (var providerName in llmOptions.Providers.Keys)
+            foreach (var provider in llmOptions.Providers.Values)
             {
-                services.AddHttpClient($"LLM_{providerName}")
-                    .SetHandlerLifetime(TimeSpan.FromMinutes(5));
+                services.AddHttpClient($"LLM_{provider.Name}", client =>
+                {
+                    client.BaseAddress = new Uri(provider.BaseUrl);
+                    client.Timeout = TimeSpan.FromSeconds(provider.TimeoutSeconds);
+                })
+                .SetHandlerLifetime(TimeSpan.FromMinutes(5));
             }
+        }
+
+        // 确保基础 HttpClient 服务始终可用（即使没有提供商配置）
+        // 这样 IHttpClientFactory 可以被解析，Factory 可以正常创建
+        if (!services.Any(sd => sd.ServiceType == typeof(IHttpClientFactory)))
+        {
+            services.AddHttpClient();
         }
 
         // 注册工厂（单例）
