@@ -87,13 +87,26 @@ General Agent V3 是使用 C# 和 .NET 9 开发的 AI Agent 系统，是继 Pyth
 
 ### 数据持久化
 
-**选择**: Entity Framework Core 9 + SQLite
+**选择**: Entity Framework Core 9 + SQLite（标准模式）/ Dapper（AOT 模式）
 
 **理由**:
 - EF Core 是 .NET 标准 ORM，与 V2 的 SQLx 概念一致
 - SQLite 轻量级，与 V2 保持一致
-- EF Core 9 改进了 AOT 支持（Compiled Models）
 - 支持迁移和查询优化
+
+**AOT 兼容性说明**:
+
+EF Core 对 AOT 的支持仍然有限：
+- ❌ 不支持: 动态 LINQ、Expression.Compile()
+- ⚠️ 部分支持: 基本 LINQ 查询（需要 Compiled Models）
+- ✅ 完全支持: 预编译查询、原始 SQL
+
+**推荐策略**:
+1. **Phase 1-3**: 使用标准 EF Core，不启用 AOT
+2. **Phase 4** (AOT 优化时):
+   - **选项 A**: 切换到 Dapper（轻量级 ORM，完全兼容 AOT）
+   - **选项 B**: 使用 EF Core Compiled Models + 原始 SQL
+   - **选项 C**: CLI/TUI 启用 AOT，Worker 保持标准模式
 
 ### LLM 客户端
 
@@ -258,16 +271,16 @@ public interface ILLMClient
 #### 领域模型
 
 ```csharp
-// Session.cs
-public sealed class Session
+// Session.cs - 使用 record 实现不可变性
+public sealed record Session
 {
     public Guid Id { get; init; }
-    public string? Title { get; set; }
+    public string? Title { get; init; }
     public DateTime CreatedAt { get; init; }
-    public DateTime UpdatedAt { get; set; }
+    public DateTime UpdatedAt { get; init; }
     public SessionType Type { get; init; } = SessionType.Normal;
     public Guid? ParentId { get; init; }  // Subagent 场景
-    public SessionStatus Status { get; set; } = SessionStatus.Active;
+    public SessionStatus Status { get; init; } = SessionStatus.Active;
 
     // 工厂方法
     public static Session Create(string? title = null, Guid? parentId = null)
@@ -280,10 +293,17 @@ public sealed class Session
             ParentId = parentId,
             Type = parentId.HasValue ? SessionType.Subagent : SessionType.Normal
         };
+
+    // 不可变更新方法（返回新实例）
+    public Session WithTitle(string? title)
+        => this with { Title = title, UpdatedAt = DateTime.UtcNow };
+
+    public Session WithStatus(SessionStatus status)
+        => this with { Status = status, UpdatedAt = DateTime.UtcNow };
 }
 
-// Message.cs
-public sealed class Message
+// Message.cs - 使用 record 实现不可变性
+public sealed record Message
 {
     public Guid Id { get; init; }
     public Guid SessionId { get; init; }
@@ -300,6 +320,17 @@ public sealed class Message
             Role = MessageRole.User,
             Content = content,
             CreatedAt = DateTime.UtcNow
+        };
+
+    public static Message CreateAssistant(Guid sessionId, string content, Dictionary<string, object>? metadata = null)
+        => new()
+        {
+            Id = Guid.NewGuid(),
+            SessionId = sessionId,
+            Role = MessageRole.Assistant,
+            Content = content,
+            CreatedAt = DateTime.UtcNow,
+            Metadata = metadata
         };
 }
 ```
@@ -324,6 +355,60 @@ public readonly record struct Result<T>
         Func<T, TResult> onSuccess,
         Func<string, TResult> onFailure)
         => IsSuccess ? onSuccess(Value!) : onFailure(Error!);
+}
+```
+
+#### 错误处理策略
+
+**何时使用 Result<T> vs 异常**：
+
+| 场景 | 使用 Result<T> | 使用异常 |
+|------|---------------|---------|
+| 业务规则验证失败 | ✅ | ❌ |
+| 可预期的错误（如未找到） | ✅ | ❌ |
+| 基础设施故障（数据库、网络） | ❌ | ✅ |
+| 编程错误（null reference） | ❌ | ✅ |
+
+**示例**：
+
+```csharp
+// ✅ 使用 Result - 业务逻辑错误
+public Result<Session> ValidateSession(Session session)
+{
+    if (string.IsNullOrEmpty(session.Title))
+        return Result<Session>.Failure("会话标题不能为空");
+    return Result<Session>.Success(session);
+}
+
+// ✅ 使用异常 - 基础设施错误
+public async Task<Session?> GetByIdAsync(Guid id, CancellationToken ct = default)
+{
+    // EF Core 异常（DbUpdateException 等）向上抛出
+    return await _context.Sessions
+        .AsNoTracking()
+        .FirstOrDefaultAsync(s => s.Id == id, ct);
+}
+
+// ✅ 应用层统一处理
+public async Task<Result<string>> SendMessageAsync(
+    SendMessageRequest request,
+    CancellationToken ct = default)
+{
+    try
+    {
+        var response = await _llmClient.CompleteAsync(/* ... */);
+        return Result<string>.Success(response.Content);
+    }
+    catch (StorageException ex)
+    {
+        _logger.LogError(ex, "存储错误");
+        return Result<string>.Failure($"存储错误: {ex.Message}");
+    }
+    catch (LLMException ex)
+    {
+        _logger.LogError(ex, "LLM 错误");
+        return Result<string>.Failure($"LLM 错误: {ex.Message}");
+    }
 }
 ```
 
@@ -664,6 +749,196 @@ public sealed class ConversationService
     {
         // 流式实现
         // ...
+    }
+}
+```
+
+#### SubagentService - 并行任务编排
+
+```csharp
+// Services/SubagentService.cs
+public sealed class SubagentService
+{
+    private readonly SessionService _sessionService;
+    private readonly ConversationService _conversationService;
+    private readonly ILogger<SubagentService> _logger;
+
+    public SubagentService(
+        SessionService sessionService,
+        ConversationService conversationService,
+        ILogger<SubagentService> logger)
+    {
+        _sessionService = sessionService;
+        _conversationService = conversationService;
+        _logger = logger;
+    }
+
+    // 启动并行子任务
+    public async Task<List<SubagentTask>> StartParallelTasksAsync(
+        Guid parentSessionId,
+        List<string> taskDescriptions,
+        CancellationToken ct = default)
+    {
+        var tasks = new List<SubagentTask>();
+
+        foreach (var description in taskDescriptions)
+        {
+            // 创建子会话
+            var subSession = await _sessionService.CreateSessionAsync(
+                title: description,
+                parentId: parentSessionId,
+                ct: ct);
+
+            // 更新父会话状态
+            var parentSession = await _sessionService.LoadSessionAsync(parentSessionId, ct);
+            await _sessionService.UpdateSessionAsync(
+                parentSession.WithStatus(SessionStatus.Running),
+                ct);
+
+            // 启动异步任务
+            var task = Task.Run(async () =>
+            {
+                try
+                {
+                    var result = await _conversationService.SendMessageAsync(new()
+                    {
+                        SessionId = subSession.Id,
+                        Content = description
+                    }, ct);
+
+                    // 更新子会话为完成状态
+                    var completedSubSession = await _sessionService.LoadSessionAsync(subSession.Id, ct);
+                    await _sessionService.UpdateSessionAsync(
+                        completedSubSession.WithStatus(SessionStatus.Completed),
+                        ct);
+
+                    return result;
+                }
+                catch (Exception ex)
+                {
+                    _logger.LogError(ex, "Subagent task failed: {Description}", description);
+
+                    // 更新子会话为失败状态
+                    var failedSubSession = await _sessionService.LoadSessionAsync(subSession.Id, ct);
+                    await _sessionService.UpdateSessionAsync(
+                        failedSubSession.WithStatus(SessionStatus.Failed),
+                        ct);
+
+                    throw;
+                }
+            }, ct);
+
+            tasks.Add(new SubagentTask
+            {
+                SessionId = subSession.Id,
+                Description = description,
+                Task = task
+            });
+        }
+
+        return tasks;
+    }
+
+    // 获取子代理状态
+    public async Task<List<SubagentStatus>> GetSubagentStatusAsync(
+        Guid parentSessionId,
+        CancellationToken ct = default)
+    {
+        // 查询所有子会话
+        var allSessions = await _sessionService.ListSessionsAsync(limit: 1000, offset: 0, ct);
+        var subSessions = allSessions.Items
+            .Where(s => s.ParentId == parentSessionId)
+            .ToList();
+
+        return subSessions.Select(s => new SubagentStatus
+        {
+            SessionId = s.Id,
+            Title = s.Title ?? "(untitled)",
+            Status = s.Status,
+            LastUpdate = s.UpdatedAt
+        }).ToList();
+    }
+
+    // 等待所有子任务完成
+    public async Task<List<string>> WaitForAllTasksAsync(
+        List<SubagentTask> tasks,
+        CancellationToken ct = default)
+    {
+        var results = await Task.WhenAll(tasks.Select(t => t.Task));
+        return results.ToList();
+    }
+}
+
+// DTOs/SubagentTask.cs
+public sealed class SubagentTask
+{
+    public required Guid SessionId { get; init; }
+    public required string Description { get; init; }
+    public required Task<string> Task { get; init; }
+}
+
+// DTOs/SubagentStatus.cs
+public sealed class SubagentStatus
+{
+    public required Guid SessionId { get; init; }
+    public required string Title { get; init; }
+    public required SessionStatus Status { get; init; }
+    public required DateTime LastUpdate { get; init; }
+}
+```
+
+#### 性能监控和可观测性
+
+```csharp
+// Application/Telemetry/AgentMetrics.cs
+public sealed class AgentMetrics
+{
+    private readonly Meter _meter;
+    private readonly Counter<long> _messagesCounter;
+    private readonly Histogram<double> _responseDuration;
+    private readonly Counter<long> _errorsCounter;
+
+    public AgentMetrics(IMeterFactory meterFactory)
+    {
+        _meter = meterFactory.Create("GeneralAgent");
+        _messagesCounter = _meter.CreateCounter<long>("messages_total");
+        _responseDuration = _meter.CreateHistogram<double>("llm_response_duration_seconds");
+        _errorsCounter = _meter.CreateCounter<long>("errors_total");
+    }
+
+    public void RecordMessage(string role)
+        => _messagesCounter.Add(1, new KeyValuePair<string, object?>("role", role));
+
+    public void RecordResponseDuration(TimeSpan duration, string provider)
+        => _responseDuration.Record(duration.TotalSeconds,
+            new KeyValuePair<string, object?>("provider", provider));
+
+    public void RecordError(string errorType)
+        => _errorsCounter.Add(1, new KeyValuePair<string, object?>("type", errorType));
+}
+
+// 集成到 ConversationService
+public async Task<string> SendMessageAsync(SendMessageRequest request, CancellationToken ct)
+{
+    using var activity = ActivitySource.StartActivity("SendMessage");
+    var sw = Stopwatch.StartNew();
+
+    try
+    {
+        // ... 业务逻辑
+        _metrics.RecordMessage("user");
+        _metrics.RecordMessage("assistant");
+        return response.Content;
+    }
+    catch (Exception ex)
+    {
+        _metrics.RecordError(ex.GetType().Name);
+        throw;
+    }
+    finally
+    {
+        sw.Stop();
+        _metrics.RecordResponseDuration(sw.Elapsed, _llmClient.ProviderName);
     }
 }
 ```
