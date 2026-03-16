@@ -354,21 +354,311 @@ public sealed class OpenAICompatibleClientTests
     }
 
     [Fact]
-    public async Task StreamAsync_抛出NotImplementedException()
+    public async Task StreamAsync_成功流式调用_返回多个chunks()
     {
         // Arrange
-        var httpClient = new HttpClient();
-        var client = new OpenAICompatibleClient(httpClient, _options, _loggerMock.Object);
         var request = CreateValidRequest();
+        var sseContent = @"data: {""id"":""test-1"",""object"":""chat.completion.chunk"",""created"":1234567890,""model"":""test-model"",""choices"":[{""index"":0,""delta"":{""role"":""assistant"",""content"":""你好""},""finish_reason"":null}]}
+
+data: {""id"":""test-1"",""object"":""chat.completion.chunk"",""created"":1234567890,""model"":""test-model"",""choices"":[{""index"":0,""delta"":{""content"":""世界""},""finish_reason"":null}]}
+
+data: {""id"":""test-1"",""object"":""chat.completion.chunk"",""created"":1234567890,""model"":""test-model"",""choices"":[{""index"":0,""delta"":{""content"":""！""},""finish_reason"":""stop""}]}
+
+data: [DONE]
+
+";
+        var httpClient = CreateMockStreamingHttpClient(sseContent, HttpStatusCode.OK);
+        var client = new OpenAICompatibleClient(httpClient, _options, _loggerMock.Object);
+
+        // Act
+        var chunks = new List<StreamChunk>();
+        await foreach (var chunk in client.StreamAsync(request))
+        {
+            chunks.Add(chunk);
+        }
+
+        // Assert
+        chunks.Should().HaveCount(3);
+        chunks[0].Delta.Should().Be("你好");
+        chunks[0].IsComplete.Should().BeFalse();
+        chunks[1].Delta.Should().Be("世界");
+        chunks[1].IsComplete.Should().BeFalse();
+        chunks[2].Delta.Should().Be("！");
+        chunks[2].IsComplete.Should().BeTrue();
+    }
+
+    [Fact]
+    public async Task StreamAsync_单个chunk_成功返回()
+    {
+        // Arrange
+        var request = CreateValidRequest();
+        var sseContent = @"data: {""id"":""test-1"",""object"":""chat.completion.chunk"",""created"":1234567890,""model"":""test-model"",""choices"":[{""index"":0,""delta"":{""content"":""Hello""},""finish_reason"":""stop""}]}
+
+data: [DONE]
+
+";
+        var httpClient = CreateMockStreamingHttpClient(sseContent, HttpStatusCode.OK);
+        var client = new OpenAICompatibleClient(httpClient, _options, _loggerMock.Object);
+
+        // Act
+        var chunks = new List<StreamChunk>();
+        await foreach (var chunk in client.StreamAsync(request))
+        {
+            chunks.Add(chunk);
+        }
+
+        // Assert
+        chunks.Should().HaveCount(1);
+        chunks[0].Delta.Should().Be("Hello");
+        chunks[0].IsComplete.Should().BeTrue();
+    }
+
+    [Fact]
+    public async Task StreamAsync_空内容chunk_被跳过()
+    {
+        // Arrange
+        var request = CreateValidRequest();
+        var sseContent = @"data: {""id"":""test-1"",""object"":""chat.completion.chunk"",""created"":1234567890,""model"":""test-model"",""choices"":[{""index"":0,""delta"":{""role"":""assistant""},""finish_reason"":null}]}
+
+data: {""id"":""test-1"",""object"":""chat.completion.chunk"",""created"":1234567890,""model"":""test-model"",""choices"":[{""index"":0,""delta"":{""content"":""Hello""},""finish_reason"":null}]}
+
+data: {""id"":""test-1"",""object"":""chat.completion.chunk"",""created"":1234567890,""model"":""test-model"",""choices"":[{""index"":0,""delta"":{},""finish_reason"":""stop""}]}
+
+data: [DONE]
+
+";
+        var httpClient = CreateMockStreamingHttpClient(sseContent, HttpStatusCode.OK);
+        var client = new OpenAICompatibleClient(httpClient, _options, _loggerMock.Object);
+
+        // Act
+        var chunks = new List<StreamChunk>();
+        await foreach (var chunk in client.StreamAsync(request))
+        {
+            chunks.Add(chunk);
+        }
+
+        // Assert
+        chunks.Should().HaveCount(2);
+        chunks[0].Delta.Should().Be("Hello");
+        chunks[0].IsComplete.Should().BeFalse();
+        chunks[1].Delta.Should().BeEmpty();
+        chunks[1].IsComplete.Should().BeTrue();
+    }
+
+    [Fact]
+    public async Task StreamAsync_Role字段_在第一个chunk中处理()
+    {
+        // Arrange
+        var request = CreateValidRequest();
+        var sseContent = @"data: {""id"":""test-1"",""object"":""chat.completion.chunk"",""created"":1234567890,""model"":""test-model"",""choices"":[{""index"":0,""delta"":{""role"":""assistant"",""content"":""Hi""},""finish_reason"":null}]}
+
+data: {""id"":""test-1"",""object"":""chat.completion.chunk"",""created"":1234567890,""model"":""test-model"",""choices"":[{""index"":0,""delta"":{""content"":"" there""},""finish_reason"":""stop""}]}
+
+data: [DONE]
+
+";
+        var httpClient = CreateMockStreamingHttpClient(sseContent, HttpStatusCode.OK);
+        var client = new OpenAICompatibleClient(httpClient, _options, _loggerMock.Object);
+
+        // Act
+        var chunks = new List<StreamChunk>();
+        await foreach (var chunk in client.StreamAsync(request))
+        {
+            chunks.Add(chunk);
+        }
+
+        // Assert
+        chunks.Should().HaveCount(2);
+        chunks[0].Delta.Should().Be("Hi");
+        chunks[1].Delta.Should().Be(" there");
+        chunks[1].IsComplete.Should().BeTrue();
+    }
+
+    [Fact]
+    public async Task StreamAsync_DONE标记_正确结束流()
+    {
+        // Arrange
+        var request = CreateValidRequest();
+        var sseContent = @"data: {""id"":""test-1"",""object"":""chat.completion.chunk"",""created"":1234567890,""model"":""test-model"",""choices"":[{""index"":0,""delta"":{""content"":""Test""},""finish_reason"":null}]}
+
+data: [DONE]
+
+data: {""id"":""test-2"",""object"":""chat.completion.chunk"",""created"":1234567890,""model"":""test-model"",""choices"":[{""index"":0,""delta"":{""content"":""Should not appear""},""finish_reason"":null}]}
+
+";
+        var httpClient = CreateMockStreamingHttpClient(sseContent, HttpStatusCode.OK);
+        var client = new OpenAICompatibleClient(httpClient, _options, _loggerMock.Object);
+
+        // Act
+        var chunks = new List<StreamChunk>();
+        await foreach (var chunk in client.StreamAsync(request))
+        {
+            chunks.Add(chunk);
+        }
+
+        // Assert
+        chunks.Should().HaveCount(1);
+        chunks[0].Delta.Should().Be("Test");
+    }
+
+    [Fact]
+    public async Task StreamAsync_HTTP错误_抛出LLMException()
+    {
+        // Arrange
+        var request = CreateValidRequest();
+        var httpClient = CreateMockStreamingHttpClient(
+            content: "{\"error\": \"Unauthorized\"}",
+            statusCode: HttpStatusCode.Unauthorized);
+        var client = new OpenAICompatibleClient(httpClient, _options, _loggerMock.Object);
 
         // Act & Assert
-        await Assert.ThrowsAsync<NotImplementedException>(async () =>
+        var exception = await Assert.ThrowsAsync<LLMException>(async () =>
         {
             await foreach (var _ in client.StreamAsync(request))
             {
                 // 不应该执行到这里
             }
         });
+
+        exception.ErrorType.Should().Be(LLMErrorType.AuthenticationError);
+        exception.ProviderName.Should().Be("TestProvider");
+    }
+
+    [Fact]
+    public async Task StreamAsync_网络错误_抛出NetworkError异常()
+    {
+        // Arrange
+        var request = CreateValidRequest();
+        var handlerMock = new Mock<HttpMessageHandler>();
+        handlerMock
+            .Protected()
+            .Setup<Task<HttpResponseMessage>>(
+                "SendAsync",
+                ItExpr.IsAny<HttpRequestMessage>(),
+                ItExpr.IsAny<CancellationToken>())
+            .ThrowsAsync(new HttpRequestException("Network error"));
+
+        var httpClient = new HttpClient(handlerMock.Object);
+        var client = new OpenAICompatibleClient(httpClient, _options, _loggerMock.Object);
+
+        // Act & Assert
+        var exception = await Assert.ThrowsAsync<LLMException>(async () =>
+        {
+            await foreach (var _ in client.StreamAsync(request))
+            {
+                // 不应该执行到这里
+            }
+        });
+
+        exception.ErrorType.Should().Be(LLMErrorType.NetworkError);
+        exception.InnerException.Should().BeOfType<HttpRequestException>();
+    }
+
+    [Fact]
+    public async Task StreamAsync_超时_抛出TimeoutError异常()
+    {
+        // Arrange
+        var request = CreateValidRequest();
+        var shortTimeoutConfig = new LLMProviderConfig
+        {
+            Name = "TestProvider",
+            BaseUrl = "http://localhost:11434",
+            DefaultModel = "test-model",
+            TimeoutSeconds = 1
+        };
+        var shortTimeoutOptions = Options.Create(shortTimeoutConfig);
+
+        var handlerMock = new Mock<HttpMessageHandler>();
+        handlerMock
+            .Protected()
+            .Setup<Task<HttpResponseMessage>>(
+                "SendAsync",
+                ItExpr.IsAny<HttpRequestMessage>(),
+                ItExpr.IsAny<CancellationToken>())
+            .Returns(async (HttpRequestMessage _, CancellationToken ct) =>
+            {
+                await Task.Delay(TimeSpan.FromSeconds(5), ct);
+                return new HttpResponseMessage(HttpStatusCode.OK);
+            });
+
+        var httpClient = new HttpClient(handlerMock.Object);
+        var client = new OpenAICompatibleClient(httpClient, shortTimeoutOptions, _loggerMock.Object);
+
+        // Act & Assert
+        var exception = await Assert.ThrowsAsync<LLMException>(async () =>
+        {
+            await foreach (var _ in client.StreamAsync(request))
+            {
+                // 不应该执行到这里
+            }
+        });
+
+        exception.ErrorType.Should().Be(LLMErrorType.TimeoutError);
+        exception.Message.Should().Contain("超时");
+    }
+
+    [Fact]
+    public async Task StreamAsync_JSON解析错误_记录警告并跳过chunk()
+    {
+        // Arrange
+        var request = CreateValidRequest();
+        var sseContent = @"data: {""id"":""test-1"",""object"":""chat.completion.chunk"",""created"":1234567890,""model"":""test-model"",""choices"":[{""index"":0,""delta"":{""content"":""Good""},""finish_reason"":null}]}
+
+data: Invalid JSON {]
+
+data: {""id"":""test-1"",""object"":""chat.completion.chunk"",""created"":1234567890,""model"":""test-model"",""choices"":[{""index"":0,""delta"":{""content"":""OK""},""finish_reason"":""stop""}]}
+
+data: [DONE]
+
+";
+        var httpClient = CreateMockStreamingHttpClient(sseContent, HttpStatusCode.OK);
+        var client = new OpenAICompatibleClient(httpClient, _options, _loggerMock.Object);
+
+        // Act
+        var chunks = new List<StreamChunk>();
+        await foreach (var chunk in client.StreamAsync(request))
+        {
+            chunks.Add(chunk);
+        }
+
+        // Assert
+        chunks.Should().HaveCount(2);
+        chunks[0].Delta.Should().Be("Good");
+        chunks[1].Delta.Should().Be("OK");
+        chunks[1].IsComplete.Should().BeTrue();
+    }
+
+    [Fact]
+    public async Task StreamAsync_注释行和空行_正确忽略()
+    {
+        // Arrange
+        var request = CreateValidRequest();
+        var sseContent = @": This is a comment
+
+data: {""id"":""test-1"",""object"":""chat.completion.chunk"",""created"":1234567890,""model"":""test-model"",""choices"":[{""index"":0,""delta"":{""content"":""Hello""},""finish_reason"":null}]}
+
+: Another comment
+
+data: {""id"":""test-1"",""object"":""chat.completion.chunk"",""created"":1234567890,""model"":""test-model"",""choices"":[{""index"":0,""delta"":{""content"":"" World""},""finish_reason"":""stop""}]}
+
+data: [DONE]
+
+";
+        var httpClient = CreateMockStreamingHttpClient(sseContent, HttpStatusCode.OK);
+        var client = new OpenAICompatibleClient(httpClient, _options, _loggerMock.Object);
+
+        // Act
+        var chunks = new List<StreamChunk>();
+        await foreach (var chunk in client.StreamAsync(request))
+        {
+            chunks.Add(chunk);
+        }
+
+        // Assert
+        chunks.Should().HaveCount(2);
+        chunks[0].Delta.Should().Be("Hello");
+        chunks[1].Delta.Should().Be(" World");
+        chunks[1].IsComplete.Should().BeTrue();
     }
 
     // 集成测试（需要本地 Ollama 服务）
@@ -481,6 +771,26 @@ public sealed class OpenAICompatibleClientTests
             {
                 StatusCode = statusCode,
                 Content = new StringContent(content, Encoding.UTF8, "application/json")
+            });
+
+        return new HttpClient(handlerMock.Object);
+    }
+
+    private static HttpClient CreateMockStreamingHttpClient(
+        string content,
+        HttpStatusCode statusCode)
+    {
+        var handlerMock = new Mock<HttpMessageHandler>();
+        handlerMock
+            .Protected()
+            .Setup<Task<HttpResponseMessage>>(
+                "SendAsync",
+                ItExpr.IsAny<HttpRequestMessage>(),
+                ItExpr.IsAny<CancellationToken>())
+            .ReturnsAsync(new HttpResponseMessage
+            {
+                StatusCode = statusCode,
+                Content = new StringContent(content, Encoding.UTF8, "text/event-stream")
             });
 
         return new HttpClient(handlerMock.Object);
