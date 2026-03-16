@@ -9,7 +9,7 @@ public class AgentException : Exception
     {
     }
 
-    public AgentException(string message, Exception innerException)
+    public AgentException(string message, Exception? innerException)
         : base(message, innerException)
     {
     }
