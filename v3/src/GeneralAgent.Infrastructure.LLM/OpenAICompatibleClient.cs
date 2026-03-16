@@ -66,7 +66,7 @@ public sealed class OpenAICompatibleClient : ILLMClient
             timeoutCts.CancelAfter(TimeSpan.FromSeconds(_config.TimeoutSeconds));
 
             // 发送 HTTP 请求
-            var response = await _httpClient.PostAsJsonAsync(
+            using var response = await _httpClient.PostAsJsonAsync(
                 apiUrl,
                 openAIRequest,
                 _jsonOptions,
@@ -75,13 +75,13 @@ public sealed class OpenAICompatibleClient : ILLMClient
             // 处理 HTTP 错误
             if (!response.IsSuccessStatusCode)
             {
-                await HandleHttpErrorAsync(response, ct);
+                await HandleHttpErrorAsync(response, timeoutCts.Token);
             }
 
             // 解析响应
             var openAIResponse = await response.Content.ReadFromJsonAsync<OpenAIChatResponse>(
                 _jsonOptions,
-                ct);
+                timeoutCts.Token);
 
             if (openAIResponse is null)
             {
@@ -232,10 +232,10 @@ public sealed class OpenAICompatibleClient : ILLMClient
     /// <summary>
     /// 处理 HTTP 错误响应
     /// </summary>
-    private async Task HandleHttpErrorAsync(HttpResponseMessage response, CancellationToken ct)
+    private async Task HandleHttpErrorAsync(HttpResponseMessage response, CancellationToken timeoutToken)
     {
         var statusCode = response.StatusCode;
-        var content = await response.Content.ReadAsStringAsync(ct);
+        var content = await response.Content.ReadAsStringAsync(timeoutToken);
 
         _logger.LogError(
             "LLM 请求失败，状态码: {StatusCode}，响应: {Content}",

@@ -461,7 +461,7 @@ public sealed class OpenAICompatibleClientTests
     {
         var json = JsonSerializer.Serialize(response, new JsonSerializerOptions
         {
-            PropertyNamingPolicy = JsonNamingPolicy.CamelCase
+            PropertyNamingPolicy = JsonNamingPolicy.SnakeCaseLower
         });
         return CreateMockHttpClient(json, statusCode);
     }
