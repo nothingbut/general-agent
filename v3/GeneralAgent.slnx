@@ -1,2 +1,5 @@
 <Solution>
+  <Folder Name="/src/">
+    <Project Path="src/GeneralAgent.Core/GeneralAgent.Core.csproj" />
+  </Folder>
 </Solution>
