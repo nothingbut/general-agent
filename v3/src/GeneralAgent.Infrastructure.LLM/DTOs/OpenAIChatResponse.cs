@@ -36,7 +36,7 @@ public sealed record OpenAIChatResponse
     /// 生成的选项列表
     /// </summary>
     [JsonPropertyName("choices")]
-    public required List<OpenAIChoice> Choices { get; init; }
+    public required IReadOnlyList<OpenAIChoice> Choices { get; init; }
 
     /// <summary>
     /// Token 使用统计

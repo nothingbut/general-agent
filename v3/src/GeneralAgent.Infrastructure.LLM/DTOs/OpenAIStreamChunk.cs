@@ -36,5 +36,5 @@ public sealed record OpenAIStreamChunk
     /// 流式响应的选项列表
     /// </summary>
     [JsonPropertyName("choices")]
-    public required List<OpenAIStreamChoice> Choices { get; init; }
+    public required IReadOnlyList<OpenAIStreamChoice> Choices { get; init; }
 }

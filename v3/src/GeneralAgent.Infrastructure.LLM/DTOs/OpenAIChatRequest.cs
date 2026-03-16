@@ -18,7 +18,7 @@ public sealed record OpenAIChatRequest
     /// 对话历史消息
     /// </summary>
     [JsonPropertyName("messages")]
-    public required List<OpenAIChatMessage> Messages { get; init; }
+    public required IReadOnlyList<OpenAIChatMessage> Messages { get; init; }
 
     /// <summary>
     /// 温度参数（0.0-2.0），控制响应的随机性
@@ -54,5 +54,5 @@ public sealed record OpenAIChatRequest
     /// 停止序列
     /// </summary>
     [JsonPropertyName("stop")]
-    public List<string>? Stop { get; init; }
+    public IReadOnlyList<string>? Stop { get; init; }
 }

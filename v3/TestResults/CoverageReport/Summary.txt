@@ -1,0 +1,38 @@
+Summary
+  Generated on: 2026/3/16 - 13:39:25
+  Coverage date: 2026/3/16 - 13:36:21 - 2026/3/16 - 13:36:22
+  Parser: MultiReport (2x Cobertura)
+  Assemblies: 2
+  Classes: 14
+  Files: 15
+  Line coverage: 42.7%
+  Covered lines: 212
+  Uncovered lines: 284
+  Coverable lines: 496
+  Total lines: 942
+  Branch coverage: 83.3% (10 of 12)
+  Covered branches: 10
+  Total branches: 12
+  Method coverage: 85.4% (53 of 62)
+  Full method coverage: 66.1% (41 of 62)
+  Covered methods: 53
+  Fully covered methods: 41
+  Total methods: 62
+
+GeneralAgent.Core                                                                85%
+  GeneralAgent.Core.Common.PagedResult<T>                                       100%
+  GeneralAgent.Core.Common.Result<T>                                            100%
+  GeneralAgent.Core.Exceptions.AgentException                                     0%
+  GeneralAgent.Core.Exceptions.StorageException                                   0%
+  GeneralAgent.Core.Models.Message                                              100%
+  GeneralAgent.Core.Models.Session                                              100%
+
+GeneralAgent.Infrastructure                                                    34.6%
+  GeneralAgent.Infrastructure.DependencyInjection                                 0%
+  GeneralAgent.Infrastructure.Storage.AgentDbContext                            100%
+  GeneralAgent.Infrastructure.Storage.Configurations.MessageConfiguration       100%
+  GeneralAgent.Infrastructure.Storage.Configurations.SessionConfiguration       100%
+  GeneralAgent.Infrastructure.Storage.Migrations.AgentDbContextModelSnapshot      0%
+  GeneralAgent.Infrastructure.Storage.Migrations.InitialCreate                    0%
+  GeneralAgent.Infrastructure.Storage.Repositories.MessageRepository           63.2%
+  GeneralAgent.Infrastructure.Storage.Repositories.SessionRepository           76.3%
