@@ -9,7 +9,7 @@ namespace GeneralAgent.Infrastructure.LLM;
 /// <summary>
 /// LLM 客户端工厂实现
 /// </summary>
-public sealed class LLMClientFactory : ILLMClientFactory
+internal sealed class LLMClientFactory : ILLMClientFactory
 {
     private readonly IHttpClientFactory _httpClientFactory;
     private readonly IOptions<LLMOptions> _options;
@@ -49,7 +49,7 @@ public sealed class LLMClientFactory : ILLMClientFactory
         if (!_options.Value.Providers.TryGetValue(providerName, out var config))
             throw new LLMException($"提供商 '{providerName}' 未配置");
 
-        var httpClient = _httpClientFactory.CreateClient($"LLM_{config.Name}");
+        var httpClient = _httpClientFactory.CreateClient($"LLM_{providerName}");
         var providerOptions = Options.Create(config);
         var logger = _loggerFactory.CreateLogger<OpenAICompatibleClient>();
 
