@@ -214,18 +214,14 @@ public sealed class OpenAICompatibleClient : ILLMClient
         {
             // 用户主动取消
             _logger.LogWarning("流式补全请求被用户取消");
-            reader?.Dispose();
-            stream?.Dispose();
-            response?.Dispose();
+            CleanupStreamResources(reader, stream, response);
             throw;
         }
         catch (OperationCanceledException ex)
         {
             // 超时
             _logger.LogError("流式补全请求超时 (超过 {Timeout} 秒)", _config.TimeoutSeconds);
-            reader?.Dispose();
-            stream?.Dispose();
-            response?.Dispose();
+            CleanupStreamResources(reader, stream, response);
             throw new LLMException(
                 $"LLM 流式请求超时（超过 {_config.TimeoutSeconds} 秒）",
                 ProviderName,
@@ -236,9 +232,7 @@ public sealed class OpenAICompatibleClient : ILLMClient
         {
             // 网络错误
             _logger.LogError(ex, "流式补全请求网络错误: {Message}", ex.Message);
-            reader?.Dispose();
-            stream?.Dispose();
-            response?.Dispose();
+            CleanupStreamResources(reader, stream, response);
             throw new LLMException(
                 $"LLM 流式请求网络错误: {ex.Message}",
                 ProviderName,
@@ -248,18 +242,14 @@ public sealed class OpenAICompatibleClient : ILLMClient
         catch (LLMException)
         {
             // 直接抛出 LLMException
-            reader?.Dispose();
-            stream?.Dispose();
-            response?.Dispose();
+            CleanupStreamResources(reader, stream, response);
             throw;
         }
         catch (Exception ex)
         {
             // 其他未知错误
             _logger.LogError(ex, "流式补全请求未知错误: {Message}", ex.Message);
-            reader?.Dispose();
-            stream?.Dispose();
-            response?.Dispose();
+            CleanupStreamResources(reader, stream, response);
             throw new LLMException(
                 $"LLM 流式请求失败: {ex.Message}",
                 ProviderName,
@@ -268,17 +258,20 @@ public sealed class OpenAICompatibleClient : ILLMClient
         }
 
         // 逐行解析 SSE 事件（在 try-catch 之外使用 yield）
-        await foreach (var chunk in ParseSseStreamAsync(reader, timeoutCts.Token).ConfigureAwait(false))
+        try
         {
-            yield return chunk;
+            await foreach (var chunk in ParseSseStreamAsync(reader, timeoutCts.Token).ConfigureAwait(false))
+            {
+                yield return chunk;
+            }
+            _logger.LogDebug("流式补全完成");
         }
-
-        _logger.LogDebug("流式补全完成");
-
-        // 清理资源
-        reader?.Dispose();
-        stream?.Dispose();
-        response?.Dispose();
+        finally
+        {
+            reader?.Dispose();
+            stream?.Dispose();
+            response?.Dispose();
+        }
     }
 
     /// <summary>
@@ -388,8 +381,6 @@ public sealed class OpenAICompatibleClient : ILLMClient
         string? line;
         while ((line = await reader.ReadLineAsync(ct).ConfigureAwait(false)) is not null)
         {
-            ct.ThrowIfCancellationRequested();
-
             // 跳过空行和注释行
             if (string.IsNullOrWhiteSpace(line) || line.StartsWith(':'))
             {
@@ -435,6 +426,16 @@ public sealed class OpenAICompatibleClient : ILLMClient
                 }
             }
         }
+    }
+
+    /// <summary>
+    /// 清理流式请求的资源
+    /// </summary>
+    private void CleanupStreamResources(StreamReader? reader, Stream? stream, HttpResponseMessage? response)
+    {
+        reader?.Dispose();
+        stream?.Dispose();
+        response?.Dispose();
     }
 
     /// <summary>
