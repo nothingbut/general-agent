@@ -1,8 +1,9 @@
 # V3 Phase 1 实施计划 - 会话交接
 
 **创建时间**: 2026-03-16
-**上下文使用**: 93% (186KB/200KB)
-**状态**: 计划编写进行中
+**更新时间**: 2026-03-16
+**上下文使用**: 完成
+**状态**: ✅ 计划编写完成，等待执行
 
 ---
 
@@ -42,9 +43,18 @@
   - Task 5: 实现 Result 模式和 PagedResult
   - Task 6: 定义核心异常类型
   - Task 7: 定义 Repository 接口
-- ✅ Chunk 3: 存储层实现开始（Task 8-9）
+- ✅ Chunk 3: 存储层实现（Task 8-13）
   - Task 8: 创建 Infrastructure 项目和 DbContext
   - Task 9: 实现 EF Core 实体配置
+  - Task 10: 创建数据库迁移（占位步骤）
+  - Task 11: 实现 SessionRepository（TDD）
+  - Task 12: 实现 MessageRepository（TDD）
+  - Task 13: 实现依赖注入扩展
+- ✅ Chunk 4: 验证和测试（Task 14-17）
+  - Task 14: 创建 Hosts.Console 验证应用
+  - Task 15: 执行数据库迁移（实际执行）
+  - Task 16: 端到端验证
+  - Task 17: 测试覆盖率验证
 
 **代码质量**:
 - 所有代码示例完整可运行
@@ -53,26 +63,31 @@
 
 ### 3. 计划审核
 
-**审核代理**: af966ac03f30e85a9
+**第一轮审核**:
+- 审核代理: af966ac03f30e85a9
+- 审核结果: ❌ ISSUES_FOUND
+- 发现问题: 2 CRITICAL, 3 HIGH, 4 MEDIUM, 4 LOW
 
-**审核结果**: ❌ ISSUES_FOUND
-
-**发现问题**:
-- 2 个 CRITICAL 问题
-- 3 个 HIGH 问题
-- 4 个 MEDIUM 问题
-- 4 个 LOW 问题
+**第二轮修复**:
+- ✅ 所有 CRITICAL 问题已修复
+- ✅ 所有 HIGH 问题已修复
+- ✅ 计划内容完整（17 个 Task）
+- 🔄 待进行第二轮审核验证
 
 ---
 
-## 🔴 待处理的关键问题
+## ✅ 已修复的关键问题
 
-### CRITICAL 问题
+### CRITICAL 问题（已修复）
 
-#### 1. 缺少数据库迁移步骤
+#### 1. ✅ 缺少数据库迁移步骤
 **位置**: Chunk 3, Task 8 之后
 
-**需要添加**:
+**修复方案**:
+- 在 Task 10 添加迁移占位步骤（说明在 Console 应用创建后执行）
+- 在 Task 15 添加实际迁移执行步骤
+
+**原计划**:
 ```markdown
 - [ ] **Step 6: 创建初始迁移**
 
@@ -89,10 +104,12 @@ dotnet ef database update --project src/GeneralAgent.Infrastructure --startup-pr
 预期: 创建 agent.db 文件
 ```
 
-#### 2. SessionStatus 枚举缺少状态转换说明
+#### 2. ✅ SessionStatus 枚举缺少状态转换说明
 **位置**: Chunk 1, Task 2, Step 4
 
-**需要添加注释**:
+**修复方案**: 已在 SessionStatus 枚举添加状态转换规则注释
+
+**添加的注释**:
 ```csharp
 /// <summary>
 /// 会话状态
@@ -110,14 +127,16 @@ public enum SessionStatus
 }
 ```
 
-### HIGH 问题
+### HIGH 问题（已修复）
 
-#### 3. Message.Metadata 序列化风险
+#### 3. ✅ Message.Metadata 序列化风险
 **位置**: Chunk 3, Task 9, MessageConfiguration
 
 **问题**: `Dictionary<string, object>` 反序列化可能失败
 
-**修复方案（二选一）**:
+**修复方案**: 已采用选项 A，改用 `Dictionary<string, JsonElement>`
+
+**实施的修复**:
 ```csharp
 // 选项 A: 使用 JsonElement（推荐）
 builder.Property(m => m.Metadata)
@@ -132,63 +151,51 @@ builder.Property(m => m.Metadata)
 /// </summary>
 ```
 
-#### 4. 缺少 Hosts.Console 创建任务
+#### 4. ✅ 缺少 Hosts.Console 创建任务
 **位置**: Chunk 3 结束后
 
-**需要添加**: Task 10 - 创建验证用 Console 应用
-- 项目创建
-- 依赖注入配置
-- 简单 CRUD 演示
-- appsettings.json 配置
+**修复方案**: 已添加 Task 14 - 创建 Console 验证应用
+- 项目创建和依赖配置
+- 依赖注入配置（使用 Infrastructure DI 扩展）
+- 完整的 CRUD 演示（7 个验证场景）
+- appsettings.json 配置（连接字符串和日志）
 
-#### 5. Application 层不在 Phase 1 范围
-**状态**: ✅ 已调整
+#### 5. ✅ Application 层不在 Phase 1 范围
+**状态**: 已调整
 
-**修改**:
-- Goal 更新为 "Application 层留到 Phase 2"
-- 文件结构中保留 Application 项目列表（但不实现）
+**修复**:
+- Goal 已更新为 "Application 层留到 Phase 2"
+- 文件结构中保留 Application 项目列表（但标注为 Phase 2）
+- Console 应用直接调用 Repository（不通过 Application 层）
 
 ---
 
-## 📋 待完成的工作
+## 📋 计划执行路线图
 
-### Chunk 3 剩余部分（当前停在 Task 9）
+### ✅ 计划编写阶段（已完成）
 
-**Task 10**: 实现 SessionRepository（TDD）
-- 创建测试项目（Infrastructure.Tests）
-- 编写 Repository 测试（内存数据库）
-- 实现 SessionRepository
-- 验证所有 CRUD 操作
+**成果**:
+- 完整的 17 个 Task（从项目初始化到验证完成）
+- 所有 CRITICAL 和 HIGH 问题已修复
+- 详细的步骤说明（每个步骤 2-5 分钟）
+- TDD 流程完整（测试先行）
+- 验收标准明确
 
-**Task 11**: 实现 MessageRepository（TDD）
-- 编写 Repository 测试
-- 实现 MessageRepository
-- 验证外键级联删除
+### 🔄 下一阶段：计划执行
 
-**Task 12**: 实现依赖注入扩展
-- DependencyInjection.cs
-- 注册 DbContext
-- 注册 Repositories
+**执行顺序**:
+1. **Chunk 1**: Task 1-4（项目初始化和核心模型）
+2. **Chunk 2**: Task 5-7（核心抽象和通用类型）
+3. **Chunk 3**: Task 8-13（存储层实现）
+4. **Chunk 4**: Task 14-17（验证和测试）
 
-### Chunk 4: 验证和测试（新增）
+**预计时间**: 4-6 小时
 
-**Task 13**: 创建 Hosts.Console 验证应用
-- 项目创建
-- 依赖注入配置
-- appsettings.json
-- 简单 CRUD 演示（直接调用 Repository）
-
-**Task 14**: 端到端验证
-- 创建会话
-- 添加消息
-- 查询列表
-- 更新和删除
-- 验证数据持久化
-
-**Task 15**: 测试覆盖率验证
-- 运行覆盖率报告
-- 确保 >= 80%
-- 生成 HTML 报告
+**建议执行方式**:
+- 使用 `superpowers:executing-plans` skill
+- 或使用 `superpowers:subagent-driven-development` skill（如果支持）
+- 严格遵循 TDD 流程
+- 每个 Task 完成后验证测试通过
 
 ---
 
@@ -222,38 +229,58 @@ builder.Property(m => m.Metadata)
 
 ---
 
-## 🚀 如何继续（新会话提示词）
+## 🚀 如何继续（执行实施计划）
+
+### 选项 A: 执行完整计划（推荐）
 
 **在新会话中粘贴以下内容**:
 
 ```
-继续完成 General Agent V3 Phase 1 实施计划。
+执行 General Agent V3 Phase 1 实施计划。
 
-【当前状态】
-- 位置: docs/superpowers/plans/2026-03-16-v3-phase1-core-storage.md
-- 进度: 已完成 Chunk 1-3（共 9 个 Task），剩余 Chunk 3 后半部分 + Chunk 4
-- 上下文: V3_PHASE1_PLAN_HANDOFF.md（完整交接文档）
+【计划文件】
+- docs/superpowers/plans/2026-03-16-v3-phase1-core-storage.md
 
-【已完成】
-✅ Chunk 1: 项目初始化和核心模型（Task 1-4）
-✅ Chunk 2: 核心抽象和通用类型（Task 5-7）
-✅ Chunk 3 前半: DbContext 和实体配置（Task 8-9）
+【计划概要】
+- 17 个 Task，分为 4 个 Chunk
+- 从项目初始化到验证完成
+- TDD 流程，测试覆盖率 >= 80%
+- 最终产出：可运行的 Console 应用 + 完整测试
 
-【待完成】
-⏳ Chunk 3 后半: Repository 实现（Task 10-12）
-⏳ Chunk 4: 验证和测试（Task 13-15）
+【执行方式】
+使用 superpowers:executing-plans skill 执行计划。
 
-【关键修复】
-🔴 CRITICAL: 添加数据库迁移步骤（Task 8 后）
-🔴 CRITICAL: SessionStatus 状态转换说明
-🟠 HIGH: Message.Metadata 序列化改用 JsonElement
-🟠 HIGH: 创建 Hosts.Console 验证应用（Task 13）
+【验收标准】
+- 所有 32 个测试通过（Core 18 + Infrastructure 14）
+- Console 应用运行成功并通过 7 个验证场景
+- 测试覆盖率 >= 80%
+- Git 提交历史清晰（至少 15 次提交）
+```
 
-【审核反馈】
-完整问题列表见交接文档第 "🔴 待处理的关键问题" 部分。
+### 选项 B: 审核计划（验证完整性）
 
-【下一步】
-请继续编写 Task 10-15，修复上述关键问题，然后进行第二轮审核。
+**在新会话中粘贴以下内容**:
+
+```
+审核 General Agent V3 Phase 1 实施计划的完整性和正确性。
+
+【计划文件】
+- docs/superpowers/plans/2026-03-16-v3-phase1-core-storage.md
+
+【审核重点】
+1. 验证所有 CRITICAL 和 HIGH 问题已修复
+2. 检查 Task 步骤的完整性和可执行性
+3. 验证 TDD 流程正确性
+4. 检查验收标准是否明确
+
+【第一轮审核反馈】
+- 已修复所有 CRITICAL 问题（数据库迁移、状态转换说明）
+- 已修复所有 HIGH 问题（Metadata 类型、Console 应用）
+- 已添加完整的 Chunk 4（验证和测试）
+
+【期望结果】
+- 确认计划可直接执行
+- 或提供需要调整的建议
 ```
 
 ---
@@ -267,6 +294,8 @@ builder.Property(m => m.Metadata)
 **Git 提交**:
 - `519ba241` - V3 架构设计
 - `1df62fdc` - 架构设计修复
+- `7ff7bfb2` - Phase 1 实施计划（进行中）+ 交接文档
+- `fe5c3dc0` - 完成 Phase 1 实施计划并修复关键问题（当前）
 
 **关键设计决策**:
 1. 使用 record 实现不可变性
