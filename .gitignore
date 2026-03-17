@@ -37,4 +37,3 @@ Thumbs.db
 # Environment variables
 .env
 .superpowers/
-v2/target/
