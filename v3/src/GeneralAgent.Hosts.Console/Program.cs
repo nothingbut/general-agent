@@ -2,6 +2,8 @@ using GeneralAgent.Application;
 using GeneralAgent.Hosts.Console;
 using GeneralAgent.Infrastructure;
 using GeneralAgent.Infrastructure.LLM;
+using GeneralAgent.Infrastructure.Storage;
+using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Hosting;
@@ -34,6 +36,13 @@ try
     builder.Logging.SetMinimumLevel(LogLevel.Warning); // 只显示警告和错误
 
     var host = builder.Build();
+
+    // 5. 自动应用数据库迁移
+    using (var scope = host.Services.CreateScope())
+    {
+        var dbContext = scope.ServiceProvider.GetRequiredService<AgentDbContext>();
+        await dbContext.Database.MigrateAsync();
+    }
 
     // 运行 REPL
     var repl = host.Services.GetRequiredService<AgentRepl>();

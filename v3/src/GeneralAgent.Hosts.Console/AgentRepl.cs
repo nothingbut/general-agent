@@ -202,7 +202,7 @@ public class AgentRepl
             .AddColumn(new TableColumn("说明").LeftAligned());
 
         table.AddRow("[cyan]/help[/]", "显示此帮助信息");
-        table.AddRow("[cyan]/new [title][/]", "创建新会话（可选标题）");
+        table.AddRow("[cyan]/new [[title]][/]", "创建新会话（可选标题）");
         table.AddRow("[cyan]/list[/]", "列出所有会话");
         table.AddRow("[cyan]/switch <provider>[/]", "切换 LLM 提供商");
         table.AddRow("[cyan]/provider[/]", "显示当前提供商");
