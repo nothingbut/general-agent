@@ -1,4 +1,6 @@
+using System.IO;
 using GeneralAgent.Application;
+using GeneralAgent.Application.Services;
 using GeneralAgent.Hosts.Console;
 using GeneralAgent.Infrastructure;
 using GeneralAgent.Infrastructure.LLM;
@@ -42,6 +44,34 @@ try
     {
         var dbContext = scope.ServiceProvider.GetRequiredService<AgentDbContext>();
         await dbContext.Database.MigrateAsync();
+    }
+
+    // 6. 初始化技能系统
+    using (var scope = host.Services.CreateScope())
+    {
+        var skillService = scope.ServiceProvider.GetRequiredService<SkillService>();
+
+        // 从配置文件读取技能目录
+        var skillsDirectory = builder.Configuration["Skills:Directory"] ?? "../../../../../skills";
+
+        // 如果是相对路径，转换为绝对路径
+        if (!Path.IsPathRooted(skillsDirectory))
+        {
+            skillsDirectory = Path.Combine(AppContext.BaseDirectory, skillsDirectory);
+            skillsDirectory = Path.GetFullPath(skillsDirectory);
+        }
+
+        var loadResult = await skillService.LoadSkillsAsync(skillsDirectory);
+        if (!loadResult.IsSuccess)
+        {
+            System.Console.ForegroundColor = ConsoleColor.Yellow;
+            System.Console.WriteLine($"⚠️  技能加载失败: {loadResult.Error}");
+            System.Console.ResetColor();
+        }
+        else
+        {
+            System.Console.WriteLine($"✅ 成功加载 {loadResult.Value} 个技能");
+        }
     }
 
     // 运行 REPL
