@@ -3,10 +3,12 @@
     <Project Path="src/GeneralAgent.Core/GeneralAgent.Core.csproj" />
     <Project Path="src/GeneralAgent.Infrastructure.LLM/GeneralAgent.Infrastructure.LLM.csproj" />
     <Project Path="src/GeneralAgent.Infrastructure/GeneralAgent.Infrastructure.csproj" />
+    <Project Path="src/GeneralAgent.Application/GeneralAgent.Application.csproj" />
   </Folder>
   <Folder Name="/tests/">
     <Project Path="tests/GeneralAgent.Core.Tests/GeneralAgent.Core.Tests.csproj" />
     <Project Path="tests/GeneralAgent.Infrastructure.LLM.Tests/GeneralAgent.Infrastructure.LLM.Tests.csproj" />
     <Project Path="tests/GeneralAgent.Infrastructure.Tests/GeneralAgent.Infrastructure.Tests.csproj" />
+    <Project Path="tests/GeneralAgent.Application.Tests/GeneralAgent.Application.Tests.csproj" />
   </Folder>
 </Solution>
