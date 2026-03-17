@@ -1,7 +1,9 @@
+using System.CommandLine;
 using System.IO;
 using GeneralAgent.Application;
 using GeneralAgent.Application.Services;
 using GeneralAgent.Hosts.Console;
+using GeneralAgent.Hosts.Console.Commands;
 using GeneralAgent.Infrastructure;
 using GeneralAgent.Infrastructure.LLM;
 using GeneralAgent.Infrastructure.Storage;
@@ -74,11 +76,9 @@ try
         }
     }
 
-    // 运行 REPL
-    var repl = host.Services.GetRequiredService<AgentRepl>();
-    await repl.RunAsync();
-
-    return 0;
+    // 7. 创建并执行命令
+    var rootCommand = AgentRootCommand.Create(host.Services);
+    return await rootCommand.InvokeAsync(args);
 }
 catch (Exception ex)
 {
