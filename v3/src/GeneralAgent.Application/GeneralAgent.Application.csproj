@@ -16,6 +16,7 @@
     <ProjectReference Include="..\GeneralAgent.Core\GeneralAgent.Core.csproj" />
     <ProjectReference Include="..\GeneralAgent.Infrastructure\GeneralAgent.Infrastructure.csproj" />
     <ProjectReference Include="..\GeneralAgent.Infrastructure.LLM\GeneralAgent.Infrastructure.LLM.csproj" />
+    <ProjectReference Include="..\GeneralAgent.Infrastructure.Skills\GeneralAgent.Infrastructure.Skills.csproj" />
   </ItemGroup>
 
 </Project>

@@ -1,4 +1,5 @@
 using GeneralAgent.Application.Services;
+using GeneralAgent.Infrastructure.Skills;
 using Microsoft.Extensions.DependencyInjection;
 
 namespace GeneralAgent.Application;
@@ -15,6 +16,10 @@ public static class DependencyInjection
     /// <returns>服务集合</returns>
     public static IServiceCollection AddApplicationLayer(this IServiceCollection services)
     {
+        // 注册技能系统
+        services.AddSkills();
+        services.AddSingleton<SkillService>();
+
         // 注册应用层服务（Scoped 生命周期）
         services.AddScoped<SessionService>();
         services.AddScoped<ConversationService>();

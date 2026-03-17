@@ -1,0 +1,21 @@
+# 忽略草稿文件
+draft_*.md
+
+# 忽略私有文件（以下划线开头）
+_*.md
+
+# 忽略临时文件
+*.tmp.md
+*.bak.md
+
+# 忽略 README（非技能文件）
+README.md
+readme.md
+
+# 忽略测试文件
+test_*.md
+*_test.md
+
+# 忽略编辑器备份文件
+*~
+.*.swp

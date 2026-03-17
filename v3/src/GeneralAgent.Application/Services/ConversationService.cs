@@ -19,6 +19,7 @@ public sealed class ConversationService
     private readonly ISessionRepository _sessionRepository;
     private readonly IMessageRepository _messageRepository;
     private readonly ILLMClientFactory _llmClientFactory;
+    private readonly SkillService? _skillService;
 
     private const string DefaultSystemPrompt = "你是一个有帮助的 AI 助手。";
     private const string DefaultModel = "qwen3.5:0.8b";
@@ -29,11 +30,13 @@ public sealed class ConversationService
     public ConversationService(
         ISessionRepository sessionRepository,
         IMessageRepository messageRepository,
-        ILLMClientFactory llmClientFactory)
+        ILLMClientFactory llmClientFactory,
+        SkillService? skillService = null)
     {
         _sessionRepository = sessionRepository ?? throw new ArgumentNullException(nameof(sessionRepository));
         _messageRepository = messageRepository ?? throw new ArgumentNullException(nameof(messageRepository));
         _llmClientFactory = llmClientFactory ?? throw new ArgumentNullException(nameof(llmClientFactory));
+        _skillService = skillService;
     }
 
     /// <summary>
@@ -59,24 +62,45 @@ public sealed class ConversationService
         var userMsg = Message.CreateUser(sessionId, userMessage);
         await _messageRepository.CreateAsync(userMsg, ct);
 
-        // 3. 获取会话历史并转换为 ChatMessage
-        var history = await _messageRepository.GetBySessionAsync(sessionId, ct);
-        var chatMessages = ConvertToChatMessages(history);
+        string responseContent;
 
-        // 4. 调用 LLM
-        var client = _llmClientFactory.GetClient(providerName);
-        var request = new CompletionRequest
+        // 3. 检查是否是技能调用
+        if (_skillService != null && SkillCallParser.TryParse(userMessage, out var skillCall) && skillCall != null)
         {
-            Model = DefaultModel,
-            Messages = chatMessages
-        };
-        var response = await client.CompleteAsync(request, ct);
+            // 执行技能
+            var skillResult = _skillService.ExecuteSkill(skillCall.SkillName, skillCall.Arguments);
 
-        // 5. 保存助手响应
-        var assistantMsg = Message.CreateAssistant(sessionId, response.Content);
+            if (skillResult.IsSuccess)
+            {
+                responseContent = skillResult.Value!;
+            }
+            else
+            {
+                responseContent = $"❌ 技能执行失败: {skillResult.Error}";
+            }
+        }
+        else
+        {
+            // 4. 获取会话历史并转换为 ChatMessage
+            var history = await _messageRepository.GetBySessionAsync(sessionId, ct);
+            var chatMessages = ConvertToChatMessages(history);
+
+            // 5. 调用 LLM
+            var client = _llmClientFactory.GetClient(providerName);
+            var request = new CompletionRequest
+            {
+                Model = DefaultModel,
+                Messages = chatMessages
+            };
+            var response = await client.CompleteAsync(request, ct);
+            responseContent = response.Content;
+        }
+
+        // 6. 保存助手响应
+        var assistantMsg = Message.CreateAssistant(sessionId, responseContent);
         await _messageRepository.CreateAsync(assistantMsg, ct);
 
-        return response.Content;
+        return responseContent;
     }
 
     /// <summary>
@@ -102,31 +126,56 @@ public sealed class ConversationService
         var userMsg = Message.CreateUser(sessionId, userMessage);
         await _messageRepository.CreateAsync(userMsg, ct);
 
-        // 3. 获取会话历史并转换为 ChatMessage
-        var history = await _messageRepository.GetBySessionAsync(sessionId, ct);
-        var chatMessages = ConvertToChatMessages(history);
+        string fullResponse;
 
-        // 4. 调用 LLM 流式 API
-        var client = _llmClientFactory.GetClient(providerName);
-        var request = new CompletionRequest
+        // 3. 检查是否是技能调用
+        if (_skillService != null && SkillCallParser.TryParse(userMessage, out var skillCall) && skillCall != null)
         {
-            Model = DefaultModel,
-            Messages = chatMessages
-        };
+            // 执行技能（非流式）
+            var skillResult = _skillService.ExecuteSkill(skillCall.SkillName, skillCall.Arguments);
 
-        // 5. 流式返回，同时收集完整响应
-        var fullResponse = new System.Text.StringBuilder();
-        await foreach (var chunk in client.StreamAsync(request, ct))
-        {
-            if (!string.IsNullOrEmpty(chunk.Delta))
+            if (skillResult.IsSuccess)
             {
-                fullResponse.Append(chunk.Delta);
-                yield return chunk.Delta;
+                fullResponse = skillResult.Value!;
             }
+            else
+            {
+                fullResponse = $"❌ 技能执行失败: {skillResult.Error}";
+            }
+
+            // 一次性返回技能结果
+            yield return fullResponse;
+        }
+        else
+        {
+            // 4. 获取会话历史并转换为 ChatMessage
+            var history = await _messageRepository.GetBySessionAsync(sessionId, ct);
+            var chatMessages = ConvertToChatMessages(history);
+
+            // 5. 调用 LLM 流式 API
+            var client = _llmClientFactory.GetClient(providerName);
+            var request = new CompletionRequest
+            {
+                Model = DefaultModel,
+                Messages = chatMessages
+            };
+
+            // 6. 流式返回，同时收集完整响应
+            var responseBuilder = new System.Text.StringBuilder();
+            await foreach (var chunk in client.StreamAsync(request, ct))
+            {
+                if (!string.IsNullOrEmpty(chunk.Delta))
+                {
+                    responseBuilder.Append(chunk.Delta);
+                    yield return chunk.Delta;
+                }
+            }
+
+            fullResponse = responseBuilder.ToString();
         }
 
-        // 6. 保存完整的助手响应
-        var assistantMsg = Message.CreateAssistant(sessionId, fullResponse.ToString());
+        // 7. 保存完整的助手响应
+        var assistantMsg = Message.CreateAssistant(sessionId, fullResponse);
         await _messageRepository.CreateAsync(assistantMsg, ct);
     }
 

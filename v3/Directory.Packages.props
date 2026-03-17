@@ -32,5 +32,9 @@
 
     <!-- Console UI -->
     <PackageVersion Include="Spectre.Console" Version="0.49.1" />
+
+    <!-- Skills System -->
+    <PackageVersion Include="YamlDotNet" Version="15.3.0" />
+    <PackageVersion Include="Scriban" Version="5.9.1" />
   </ItemGroup>
 </Project>
