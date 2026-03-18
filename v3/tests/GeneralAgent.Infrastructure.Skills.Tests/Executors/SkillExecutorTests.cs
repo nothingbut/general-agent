@@ -3,19 +3,19 @@ using GeneralAgent.Infrastructure.Skills.Executors;
 using GeneralAgent.Infrastructure.Skills.Models;
 using FluentAssertions;
 using Microsoft.Extensions.Logging;
-using Moq;
+using NSubstitute;
 
 namespace GeneralAgent.Infrastructure.Skills.Tests.Executors;
 
 public class SkillExecutorTests
 {
     private readonly SkillExecutor _executor;
-    private readonly Mock<ILogger<SkillExecutor>> _loggerMock;
+    private readonly ILogger<SkillExecutor> _loggerMock;
 
     public SkillExecutorTests()
     {
-        _loggerMock = new Mock<ILogger<SkillExecutor>>();
-        _executor = new SkillExecutor(_loggerMock.Object);
+        _loggerMock = Substitute.For<ILogger<SkillExecutor>>();
+        _executor = new SkillExecutor(_loggerMock);
     }
 
     [Fact]

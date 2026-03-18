@@ -4,7 +4,7 @@ using GeneralAgent.Infrastructure.LLM;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Logging.Abstractions;
 using Microsoft.Extensions.Options;
-using Moq;
+using NSubstitute;
 
 namespace GeneralAgent.Infrastructure.LLM.Tests;
 
@@ -13,19 +13,19 @@ namespace GeneralAgent.Infrastructure.LLM.Tests;
 /// </summary>
 public class LLMClientFactoryTests
 {
-    private readonly Mock<IHttpClientFactory> _mockHttpClientFactory;
+    private readonly IHttpClientFactory _mockHttpClientFactory;
     private readonly ILoggerFactory _loggerFactory;
 
     public LLMClientFactoryTests()
     {
-        _mockHttpClientFactory = new Mock<IHttpClientFactory>();
+        _mockHttpClientFactory = Substitute.For<IHttpClientFactory>();
         _loggerFactory = NullLoggerFactory.Instance;
     }
 
     private LLMClientFactory CreateFactory(LLMOptions options)
     {
         var optionsWrapper = Options.Create(options);
-        return new LLMClientFactory(_mockHttpClientFactory.Object, optionsWrapper, _loggerFactory);
+        return new LLMClientFactory(_mockHttpClientFactory, optionsWrapper, _loggerFactory);
     }
 
     [Fact]
@@ -48,8 +48,7 @@ public class LLMClientFactoryTests
         };
 
         _mockHttpClientFactory
-            .Setup(f => f.CreateClient("LLM_Ollama"))
-            .Returns(new HttpClient());
+            .CreateClient("LLM_Ollama").Returns(new HttpClient());
 
         var factory = CreateFactory(options);
 
@@ -88,8 +87,7 @@ public class LLMClientFactoryTests
         };
 
         _mockHttpClientFactory
-            .Setup(f => f.CreateClient("LLM_LMStudio"))
-            .Returns(new HttpClient());
+            .CreateClient("LLM_LMStudio").Returns(new HttpClient());
 
         var factory = CreateFactory(options);
 
@@ -181,8 +179,7 @@ public class LLMClientFactoryTests
         };
 
         _mockHttpClientFactory
-            .Setup(f => f.CreateClient("LLM_Ollama"))
-            .Returns(new HttpClient());
+            .CreateClient("LLM_Ollama").Returns(new HttpClient());
 
         var factory = CreateFactory(options);
 
@@ -192,7 +189,7 @@ public class LLMClientFactoryTests
 
         // Assert
         Assert.Same(client1, client2);
-        _mockHttpClientFactory.Verify(f => f.CreateClient("LLM_Ollama"), Times.Once);
+        _mockHttpClientFactory.Received(1).CreateClient("LLM_Ollama");
     }
 
     [Fact]
@@ -222,8 +219,7 @@ public class LLMClientFactoryTests
         };
 
         _mockHttpClientFactory
-            .Setup(f => f.CreateClient(It.IsAny<string>()))
-            .Returns(new HttpClient());
+            .CreateClient(Arg.Any<string>()).Returns(new HttpClient());
 
         var factory = CreateFactory(options);
 

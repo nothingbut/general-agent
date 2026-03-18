@@ -5,19 +5,19 @@ using GeneralAgent.Infrastructure.Skills.Models;
 using GeneralAgent.Infrastructure.Skills.Registry;
 using FluentAssertions;
 using Microsoft.Extensions.Logging;
-using Moq;
+using NSubstitute;
 
 namespace GeneralAgent.Infrastructure.Skills.Tests.Registry;
 
 public class SkillRegistryTests
 {
     private readonly SkillRegistry _registry;
-    private readonly Mock<ILogger<SkillRegistry>> _loggerMock;
+    private readonly ILogger<SkillRegistry> _loggerMock;
 
     public SkillRegistryTests()
     {
-        _loggerMock = new Mock<ILogger<SkillRegistry>>();
-        _registry = new SkillRegistry(_loggerMock.Object);
+        _loggerMock = Substitute.For<ILogger<SkillRegistry>>();
+        _registry = new SkillRegistry(_loggerMock);
     }
 
     [Fact]

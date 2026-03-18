@@ -2,7 +2,7 @@ using FluentAssertions;
 using GeneralAgent.Core.Abstractions;
 using GeneralAgent.Core.Common;
 using GeneralAgent.Core.Models;
-using Moq;
+using NSubstitute;
 using System.Text.Json.Nodes;
 
 namespace GeneralAgent.Core.Tests.Abstractions;
@@ -17,11 +17,11 @@ public class IToolTests
     public void ITool_ShouldHaveNameProperty()
     {
         // Arrange
-        var mockTool = new Mock<ITool>();
-        mockTool.Setup(t => t.Name).Returns("test_tool");
+        var mockTool = Substitute.For<ITool>();
+        mockTool.Name.Returns("test_tool");
 
         // Act
-        var name = mockTool.Object.Name;
+        var name = mockTool.Name;
 
         // Assert
         name.Should().NotBeNullOrEmpty();
@@ -32,11 +32,11 @@ public class IToolTests
     public void ITool_ShouldHaveDescriptionProperty()
     {
         // Arrange
-        var mockTool = new Mock<ITool>();
-        mockTool.Setup(t => t.Description).Returns("Test tool description");
+        var mockTool = Substitute.For<ITool>();
+        mockTool.Description.Returns("Test tool description");
 
         // Act
-        var description = mockTool.Object.Description;
+        var description = mockTool.Description;
 
         // Assert
         description.Should().NotBeNullOrEmpty();
@@ -47,17 +47,17 @@ public class IToolTests
     public void ITool_GetDefinition_ShouldReturnToolDefinition()
     {
         // Arrange
-        var mockTool = new Mock<ITool>();
+        var mockTool = Substitute.For<ITool>();
         var expectedDefinition = new ToolDefinition
         {
             Name = "test_tool",
             Description = "Test tool description",
             InputSchema = new JsonObject { ["type"] = "object" }
         };
-        mockTool.Setup(t => t.GetDefinition()).Returns(expectedDefinition);
+        mockTool.GetDefinition().Returns(expectedDefinition);
 
         // Act
-        var definition = mockTool.Object.GetDefinition();
+        var definition = mockTool.GetDefinition();
 
         // Assert
         definition.Should().NotBeNull();
@@ -70,20 +70,20 @@ public class IToolTests
     public async Task ITool_ExecuteAsync_ShouldReturnResult()
     {
         // Arrange
-        var mockTool = new Mock<ITool>();
+        var mockTool = Substitute.For<ITool>();
         var sessionId = Guid.NewGuid();
         var context = new ToolExecutionContext { SessionId = sessionId };
         var arguments = new Dictionary<string, object> { ["key"] = "value" };
         var expectedResult = Result<string>.Success("execution output");
 
-        mockTool.Setup(t => t.ExecuteAsync(
-            It.IsAny<Dictionary<string, object>>(),
-            It.IsAny<ToolExecutionContext>(),
-            It.IsAny<CancellationToken>()))
-            .ReturnsAsync(expectedResult);
+        mockTool.ExecuteAsync(
+            Arg.Any<Dictionary<string, object>>(),
+            Arg.Any<ToolExecutionContext>(),
+            Arg.Any<CancellationToken>())
+            .Returns(expectedResult);
 
         // Act
-        var result = await mockTool.Object.ExecuteAsync(arguments, context, CancellationToken.None);
+        var result = await mockTool.ExecuteAsync(arguments, context, CancellationToken.None);
 
         // Assert
         result.Should().BeEquivalentTo(expectedResult);
@@ -95,20 +95,20 @@ public class IToolTests
     public async Task ITool_ExecuteAsync_CanReturnFailure()
     {
         // Arrange
-        var mockTool = new Mock<ITool>();
+        var mockTool = Substitute.For<ITool>();
         var sessionId = Guid.NewGuid();
         var context = new ToolExecutionContext { SessionId = sessionId };
         var arguments = new Dictionary<string, object>();
         var expectedResult = Result<string>.Failure("Tool execution failed");
 
-        mockTool.Setup(t => t.ExecuteAsync(
-            It.IsAny<Dictionary<string, object>>(),
-            It.IsAny<ToolExecutionContext>(),
-            It.IsAny<CancellationToken>()))
-            .ReturnsAsync(expectedResult);
+        mockTool.ExecuteAsync(
+            Arg.Any<Dictionary<string, object>>(),
+            Arg.Any<ToolExecutionContext>(),
+            Arg.Any<CancellationToken>())
+            .Returns(expectedResult);
 
         // Act
-        var result = await mockTool.Object.ExecuteAsync(arguments, context, CancellationToken.None);
+        var result = await mockTool.ExecuteAsync(arguments, context, CancellationToken.None);
 
         // Assert
         result.IsSuccess.Should().BeFalse();
@@ -119,7 +119,7 @@ public class IToolTests
     public async Task ITool_ExecuteAsync_ShouldReceiveContext()
     {
         // Arrange
-        var mockTool = new Mock<ITool>();
+        var mockTool = Substitute.For<ITool>();
         var sessionId = Guid.NewGuid();
         var context = new ToolExecutionContext
         {
@@ -127,72 +127,70 @@ public class IToolTests
             ProviderName = "test_provider"
         };
 
-        mockTool.Setup(t => t.ExecuteAsync(
-            It.IsAny<Dictionary<string, object>>(),
-            It.IsAny<ToolExecutionContext>(),
-            It.IsAny<CancellationToken>()))
-            .ReturnsAsync(Result<string>.Success("output"));
+        mockTool.ExecuteAsync(
+            Arg.Any<Dictionary<string, object>>(),
+            Arg.Any<ToolExecutionContext>(),
+            Arg.Any<CancellationToken>())
+            .Returns(Result<string>.Success("output"));
 
         // Act
-        await mockTool.Object.ExecuteAsync(
+        await mockTool.ExecuteAsync(
             new Dictionary<string, object>(),
             context,
             CancellationToken.None);
 
         // Assert
-        mockTool.Verify(t => t.ExecuteAsync(
-            It.IsAny<Dictionary<string, object>>(),
-            It.Is<ToolExecutionContext>(c => c.SessionId == sessionId && c.ProviderName == "test_provider"),
-            It.IsAny<CancellationToken>()),
-            Times.Once);
+        await mockTool.Received(1).ExecuteAsync(
+            Arg.Any<Dictionary<string, object>>(),
+            Arg.Is<ToolExecutionContext>(c => c.SessionId == sessionId && c.ProviderName == "test_provider"),
+            Arg.Any<CancellationToken>());
     }
 
     [Fact]
     public async Task ITool_ExecuteAsync_ShouldSupportCancellation()
     {
         // Arrange
-        var mockTool = new Mock<ITool>();
+        var mockTool = Substitute.For<ITool>();
         using var cts = new CancellationTokenSource();
         var context = new ToolExecutionContext { SessionId = Guid.NewGuid() };
 
-        mockTool.Setup(t => t.ExecuteAsync(
-            It.IsAny<Dictionary<string, object>>(),
-            It.IsAny<ToolExecutionContext>(),
-            It.IsAny<CancellationToken>()))
-            .ReturnsAsync(Result<string>.Success("output"));
+        mockTool.ExecuteAsync(
+            Arg.Any<Dictionary<string, object>>(),
+            Arg.Any<ToolExecutionContext>(),
+            Arg.Any<CancellationToken>())
+            .Returns(Result<string>.Success("output"));
 
         // Act
-        await mockTool.Object.ExecuteAsync(
+        await mockTool.ExecuteAsync(
             new Dictionary<string, object>(),
             context,
             cts.Token);
 
         // Assert
-        mockTool.Verify(t => t.ExecuteAsync(
-            It.IsAny<Dictionary<string, object>>(),
-            It.IsAny<ToolExecutionContext>(),
-            cts.Token),
-            Times.Once);
+        await mockTool.Received(1).ExecuteAsync(
+            Arg.Any<Dictionary<string, object>>(),
+            Arg.Any<ToolExecutionContext>(),
+            cts.Token);
     }
 
     [Fact]
     public async Task ITool_ExecuteStreamAsync_ShouldYieldResults()
     {
         // Arrange
-        var mockTool = new Mock<ITool>();
+        var mockTool = Substitute.For<ITool>();
         var sessionId = Guid.NewGuid();
         var context = new ToolExecutionContext { SessionId = sessionId };
 
         var streamResults = new[] { "chunk1", "chunk2", "chunk3" };
-        mockTool.Setup(t => t.ExecuteStreamAsync(
-            It.IsAny<Dictionary<string, object>>(),
-            It.IsAny<ToolExecutionContext>(),
-            It.IsAny<CancellationToken>()))
+        mockTool.ExecuteStreamAsync(
+            Arg.Any<Dictionary<string, object>>(),
+            Arg.Any<ToolExecutionContext>(),
+            Arg.Any<CancellationToken>())
             .Returns(GetAsyncEnumerable(streamResults));
 
         // Act
         var results = new List<string>();
-        await foreach (var chunk in mockTool.Object.ExecuteStreamAsync(
+        await foreach (var chunk in mockTool.ExecuteStreamAsync(
             new Dictionary<string, object>(),
             context,
             CancellationToken.None))
@@ -209,18 +207,18 @@ public class IToolTests
     public async Task ITool_ExecuteStreamAsync_CanReturnEmptyStream()
     {
         // Arrange
-        var mockTool = new Mock<ITool>();
+        var mockTool = Substitute.For<ITool>();
         var context = new ToolExecutionContext { SessionId = Guid.NewGuid() };
 
-        mockTool.Setup(t => t.ExecuteStreamAsync(
-            It.IsAny<Dictionary<string, object>>(),
-            It.IsAny<ToolExecutionContext>(),
-            It.IsAny<CancellationToken>()))
+        mockTool.ExecuteStreamAsync(
+            Arg.Any<Dictionary<string, object>>(),
+            Arg.Any<ToolExecutionContext>(),
+            Arg.Any<CancellationToken>())
             .Returns(GetAsyncEnumerable(Array.Empty<string>()));
 
         // Act
         var results = new List<string>();
-        await foreach (var chunk in mockTool.Object.ExecuteStreamAsync(
+        await foreach (var chunk in mockTool.ExecuteStreamAsync(
             new Dictionary<string, object>(),
             context,
             CancellationToken.None))
@@ -236,7 +234,7 @@ public class IToolTests
     public async Task ITool_ExecuteStreamAsync_ShouldReceiveContext()
     {
         // Arrange
-        var mockTool = new Mock<ITool>();
+        var mockTool = Substitute.For<ITool>();
         var sessionId = Guid.NewGuid();
         var context = new ToolExecutionContext
         {
@@ -244,15 +242,15 @@ public class IToolTests
             ProviderName = "stream_provider"
         };
 
-        mockTool.Setup(t => t.ExecuteStreamAsync(
-            It.IsAny<Dictionary<string, object>>(),
-            It.IsAny<ToolExecutionContext>(),
-            It.IsAny<CancellationToken>()))
+        mockTool.ExecuteStreamAsync(
+            Arg.Any<Dictionary<string, object>>(),
+            Arg.Any<ToolExecutionContext>(),
+            Arg.Any<CancellationToken>())
             .Returns(GetAsyncEnumerable(new[] { "output" }));
 
         // Act
         var results = new List<string>();
-        await foreach (var chunk in mockTool.Object.ExecuteStreamAsync(
+        await foreach (var chunk in mockTool.ExecuteStreamAsync(
             new Dictionary<string, object>(),
             context,
             CancellationToken.None))
@@ -261,11 +259,10 @@ public class IToolTests
         }
 
         // Assert
-        mockTool.Verify(t => t.ExecuteStreamAsync(
-            It.IsAny<Dictionary<string, object>>(),
-            It.Is<ToolExecutionContext>(c => c.SessionId == sessionId && c.ProviderName == "stream_provider"),
-            It.IsAny<CancellationToken>()),
-            Times.Once);
+        mockTool.Received(1).ExecuteStreamAsync(
+            Arg.Any<Dictionary<string, object>>(),
+            Arg.Is<ToolExecutionContext>(c => c.SessionId == sessionId && c.ProviderName == "stream_provider"),
+            Arg.Any<CancellationToken>());
     }
 
     // 辅助方法：创建异步枚举器

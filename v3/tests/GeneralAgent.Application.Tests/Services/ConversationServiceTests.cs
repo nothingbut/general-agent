@@ -1,7 +1,7 @@
 using GeneralAgent.Application.Services;
 using GeneralAgent.Core.Abstractions;
 using GeneralAgent.Core.Models;
-using Moq;
+using NSubstitute;
 using Xunit;
 
 namespace GeneralAgent.Application.Tests.Services;
@@ -11,37 +11,37 @@ namespace GeneralAgent.Application.Tests.Services;
 /// </summary>
 public sealed class ConversationServiceTests
 {
-    private readonly Mock<ISessionRepository> _mockSessionRepo;
-    private readonly Mock<IMessageRepository> _mockMessageRepo;
-    private readonly Mock<ILLMClientFactory> _mockClientFactory;
-    private readonly Mock<ILLMClient> _mockLLMClient;
+    private readonly ISessionRepository _mockSessionRepo;
+    private readonly IMessageRepository _mockMessageRepo;
+    private readonly ILLMClientFactory _mockClientFactory;
+    private readonly ILLMClient _mockLLMClient;
     private readonly ConversationService _service;
     private readonly Guid _testSessionId;
 
     public ConversationServiceTests()
     {
-        _mockSessionRepo = new Mock<ISessionRepository>();
-        _mockMessageRepo = new Mock<IMessageRepository>();
-        _mockClientFactory = new Mock<ILLMClientFactory>();
-        _mockLLMClient = new Mock<ILLMClient>();
+        _mockSessionRepo = Substitute.For<ISessionRepository>();
+        _mockMessageRepo = Substitute.For<IMessageRepository>();
+        _mockClientFactory = Substitute.For<ILLMClientFactory>();
+        _mockLLMClient = Substitute.For<ILLMClient>();
         _testSessionId = Guid.NewGuid();
 
         // 默认配置：工厂返回模拟客户端
         _mockClientFactory
-            .Setup(f => f.GetClient(It.IsAny<string?>()))
-            .Returns(_mockLLMClient.Object);
+            .GetClient(Arg.Any<string?>())
+            .Returns(_mockLLMClient);
 
         _service = new ConversationService(
-            _mockSessionRepo.Object,
-            _mockMessageRepo.Object,
-            _mockClientFactory.Object);
+            _mockSessionRepo,
+            _mockMessageRepo,
+            _mockClientFactory);
     }
 
     [Fact]
     public void Constructor_ThrowsArgumentNullException_WhenSessionRepositoryIsNull()
     {
         var ex = Assert.Throws<ArgumentNullException>(() =>
-            new ConversationService(null!, _mockMessageRepo.Object, _mockClientFactory.Object));
+            new ConversationService(null!, _mockMessageRepo, _mockClientFactory));
         Assert.Equal("sessionRepository", ex.ParamName);
     }
 
@@ -49,7 +49,7 @@ public sealed class ConversationServiceTests
     public void Constructor_ThrowsArgumentNullException_WhenMessageRepositoryIsNull()
     {
         var ex = Assert.Throws<ArgumentNullException>(() =>
-            new ConversationService(_mockSessionRepo.Object, null!, _mockClientFactory.Object));
+            new ConversationService(_mockSessionRepo, null!, _mockClientFactory));
         Assert.Equal("messageRepository", ex.ParamName);
     }
 
@@ -57,7 +57,7 @@ public sealed class ConversationServiceTests
     public void Constructor_ThrowsArgumentNullException_WhenLLMClientFactoryIsNull()
     {
         var ex = Assert.Throws<ArgumentNullException>(() =>
-            new ConversationService(_mockSessionRepo.Object, _mockMessageRepo.Object, null!));
+            new ConversationService(_mockSessionRepo, _mockMessageRepo, null!));
         Assert.Equal("llmClientFactory", ex.ParamName);
     }
 
@@ -69,20 +69,20 @@ public sealed class ConversationServiceTests
         var expectedResponse = "你好！有什么可以帮助你的吗？";
 
         _mockSessionRepo
-            .Setup(r => r.GetByIdAsync(_testSessionId, default))
-            .ReturnsAsync(Session.Create("测试会话") with { Id = _testSessionId });
+            .GetByIdAsync(_testSessionId, default)
+            .Returns(Session.Create("测试会话") with { Id = _testSessionId });
 
         _mockMessageRepo
-            .Setup(r => r.GetBySessionAsync(_testSessionId, default))
-            .ReturnsAsync(new List<Message>());
+            .GetBySessionAsync(_testSessionId, default)
+            .Returns(new List<Message>());
 
         _mockMessageRepo
-            .Setup(r => r.CreateAsync(It.IsAny<Message>(), default))
-            .ReturnsAsync((Message m, CancellationToken ct) => m);
+            .CreateAsync(Arg.Any<Message>(), default)
+            .Returns(call => call.Arg<Message>());
 
         _mockLLMClient
-            .Setup(c => c.CompleteAsync(It.IsAny<CompletionRequest>(), default))
-            .ReturnsAsync(new CompletionResponse
+            .CompleteAsync(Arg.Any<CompletionRequest>(), default)
+            .Returns(new CompletionResponse
             {
                 Content = expectedResponse,
                 Model = "test-model",
@@ -95,12 +95,12 @@ public sealed class ConversationServiceTests
 
         // Assert
         Assert.Equal(expectedResponse, response);
-        _mockMessageRepo.Verify(r => r.CreateAsync(
-            It.Is<Message>(m => m.Role == MessageRole.User && m.Content == userMessage),
-            default), Times.Once);
-        _mockMessageRepo.Verify(r => r.CreateAsync(
-            It.Is<Message>(m => m.Role == MessageRole.Assistant && m.Content == expectedResponse),
-            default), Times.Once);
+        await _mockMessageRepo.Received(1).CreateAsync(
+            Arg.Is<Message>(m => m.Role == MessageRole.User && m.Content == userMessage),
+            default);
+        await _mockMessageRepo.Received(1).CreateAsync(
+            Arg.Is<Message>(m => m.Role == MessageRole.Assistant && m.Content == expectedResponse),
+            default);
     }
 
     [Fact]
@@ -111,8 +111,8 @@ public sealed class ConversationServiceTests
         var expectedResponse = "收到第二条消息";
 
         _mockSessionRepo
-            .Setup(r => r.GetByIdAsync(_testSessionId, default))
-            .ReturnsAsync(Session.Create("测试会话") with { Id = _testSessionId });
+            .GetByIdAsync(_testSessionId, default)
+            .Returns(Session.Create("测试会话") with { Id = _testSessionId });
 
         var existingMessages = new List<Message>
         {
@@ -120,16 +120,16 @@ public sealed class ConversationServiceTests
             Message.CreateAssistant(_testSessionId, "第一条助手响应")
         };
         _mockMessageRepo
-            .Setup(r => r.GetBySessionAsync(_testSessionId, default))
-            .ReturnsAsync(existingMessages);
+            .GetBySessionAsync(_testSessionId, default)
+            .Returns(existingMessages);
 
         _mockMessageRepo
-            .Setup(r => r.CreateAsync(It.IsAny<Message>(), default))
-            .ReturnsAsync((Message m, CancellationToken ct) => m);
+            .CreateAsync(Arg.Any<Message>(), default)
+            .Returns(call => call.Arg<Message>());
 
         _mockLLMClient
-            .Setup(c => c.CompleteAsync(It.IsAny<CompletionRequest>(), default))
-            .ReturnsAsync(new CompletionResponse
+            .CompleteAsync(Arg.Any<CompletionRequest>(), default)
+            .Returns(new CompletionResponse
             {
                 Content = expectedResponse,
                 Model = "test-model",
@@ -149,8 +149,8 @@ public sealed class ConversationServiceTests
     {
         // Arrange
         _mockSessionRepo
-            .Setup(r => r.GetByIdAsync(_testSessionId, default))
-            .ReturnsAsync((Session?)null);
+            .GetByIdAsync(_testSessionId, default)
+            .Returns((Session?)null);
 
         // Act & Assert
         var ex = await Assert.ThrowsAsync<InvalidOperationException>(
@@ -165,20 +165,20 @@ public sealed class ConversationServiceTests
         var providerName = "TestProvider";
 
         _mockSessionRepo
-            .Setup(r => r.GetByIdAsync(_testSessionId, default))
-            .ReturnsAsync(Session.Create("测试会话") with { Id = _testSessionId });
+            .GetByIdAsync(_testSessionId, default)
+            .Returns(Session.Create("测试会话") with { Id = _testSessionId });
 
         _mockMessageRepo
-            .Setup(r => r.GetBySessionAsync(_testSessionId, default))
-            .ReturnsAsync(new List<Message>());
+            .GetBySessionAsync(_testSessionId, default)
+            .Returns(new List<Message>());
 
         _mockMessageRepo
-            .Setup(r => r.CreateAsync(It.IsAny<Message>(), default))
-            .ReturnsAsync((Message m, CancellationToken ct) => m);
+            .CreateAsync(Arg.Any<Message>(), default)
+            .Returns(call => call.Arg<Message>());
 
         _mockLLMClient
-            .Setup(c => c.CompleteAsync(It.IsAny<CompletionRequest>(), default))
-            .ReturnsAsync(new CompletionResponse
+            .CompleteAsync(Arg.Any<CompletionRequest>(), default)
+            .Returns(new CompletionResponse
             {
                 Content = "响应",
                 Model = "test-model",
@@ -190,7 +190,7 @@ public sealed class ConversationServiceTests
         await _service.SendMessageAsync(_testSessionId, "测试", providerName);
 
         // Assert
-        _mockClientFactory.Verify(f => f.GetClient(providerName), Times.Once);
+        _mockClientFactory.Received(1).GetClient(providerName);
     }
 
     [Fact]
@@ -202,19 +202,19 @@ public sealed class ConversationServiceTests
         var expectedFullResponse = string.Join("", chunks);
 
         _mockSessionRepo
-            .Setup(r => r.GetByIdAsync(_testSessionId, default))
-            .ReturnsAsync(Session.Create("测试会话") with { Id = _testSessionId });
+            .GetByIdAsync(_testSessionId, default)
+            .Returns(Session.Create("测试会话") with { Id = _testSessionId });
 
         _mockMessageRepo
-            .Setup(r => r.GetBySessionAsync(_testSessionId, default))
-            .ReturnsAsync(new List<Message>());
+            .GetBySessionAsync(_testSessionId, default)
+            .Returns(new List<Message>());
 
         _mockMessageRepo
-            .Setup(r => r.CreateAsync(It.IsAny<Message>(), default))
-            .ReturnsAsync((Message m, CancellationToken ct) => m);
+            .CreateAsync(Arg.Any<Message>(), default)
+            .Returns(call => call.Arg<Message>());
 
         _mockLLMClient
-            .Setup(c => c.StreamAsync(It.IsAny<CompletionRequest>(), default))
+            .StreamAsync(Arg.Any<CompletionRequest>(), default)
             .Returns(CreateAsyncEnumerable(chunks));
 
         // Act
@@ -226,11 +226,11 @@ public sealed class ConversationServiceTests
 
         // Assert
         Assert.Equal(chunks, receivedChunks);
-        _mockMessageRepo.Verify(r => r.CreateAsync(
-            It.Is<Message>(m =>
+        await _mockMessageRepo.Received(1).CreateAsync(
+            Arg.Is<Message>(m =>
                 m.Role == MessageRole.Assistant &&
                 m.Content == expectedFullResponse),
-            default), Times.Once);
+            default);
     }
 
     [Fact]
@@ -238,8 +238,8 @@ public sealed class ConversationServiceTests
     {
         // Arrange
         _mockSessionRepo
-            .Setup(r => r.GetByIdAsync(_testSessionId, default))
-            .ReturnsAsync((Session?)null);
+            .GetByIdAsync(_testSessionId, default)
+            .Returns((Session?)null);
 
         // Act & Assert
         await Assert.ThrowsAsync<InvalidOperationException>(async () =>
