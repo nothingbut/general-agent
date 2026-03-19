@@ -279,9 +279,11 @@ public sealed class ToolCallingListenerTests
         var config = new ToolCallingConfig();
 
         // Assert
+        Assert.True(config.Enabled);
         Assert.Equal(3, config.MaxRounds);
-        Assert.Equal(50, config.AbsoluteMaxRounds);
+        Assert.True(config.InteractiveMode);
         Assert.Equal(5, config.AutoExtendBy);
+        Assert.Equal(20, config.AbsoluteMaxRounds);
     }
 
     [Fact]
@@ -290,15 +292,19 @@ public sealed class ToolCallingListenerTests
         // Arrange & Act
         var config = new ToolCallingConfig
         {
+            Enabled = false,
             MaxRounds = 5,
-            AbsoluteMaxRounds = 100,
-            AutoExtendBy = 10
+            InteractiveMode = false,
+            AutoExtendBy = 10,
+            AbsoluteMaxRounds = 100
         };
 
         // Assert
+        Assert.False(config.Enabled);
         Assert.Equal(5, config.MaxRounds);
-        Assert.Equal(100, config.AbsoluteMaxRounds);
+        Assert.False(config.InteractiveMode);
         Assert.Equal(10, config.AutoExtendBy);
+        Assert.Equal(100, config.AbsoluteMaxRounds);
     }
 
     [Fact]
