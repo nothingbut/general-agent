@@ -68,7 +68,12 @@ public sealed class ConversationService
         if (_skillService != null && SkillCallParser.TryParse(userMessage, out var skillCall) && skillCall != null)
         {
             // 执行技能
-            var skillResult = _skillService.ExecuteSkill(skillCall.SkillName, skillCall.Arguments);
+            var skillResult = await _skillService.ExecuteSkillAsync(
+                skillCall.SkillName,
+                skillCall.Arguments,
+                sessionId,
+                providerName,
+                ct);
 
             if (skillResult.IsSuccess)
             {
@@ -132,7 +137,12 @@ public sealed class ConversationService
         if (_skillService != null && SkillCallParser.TryParse(userMessage, out var skillCall) && skillCall != null)
         {
             // 执行技能（非流式）
-            var skillResult = _skillService.ExecuteSkill(skillCall.SkillName, skillCall.Arguments);
+            var skillResult = await _skillService.ExecuteSkillAsync(
+                skillCall.SkillName,
+                skillCall.Arguments,
+                sessionId,
+                providerName,
+                ct);
 
             if (skillResult.IsSuccess)
             {

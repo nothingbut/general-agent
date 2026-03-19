@@ -85,8 +85,16 @@ public sealed class SkillService
     /// </summary>
     /// <param name="skillName">技能名称（可以包含命名空间，如 "personal:greeting" 或 "greeting"）</param>
     /// <param name="arguments">参数字典</param>
+    /// <param name="sessionId">会话 ID</param>
+    /// <param name="providerName">LLM 提供商名称（可选）</param>
+    /// <param name="ct">取消令牌</param>
     /// <returns>执行结果</returns>
-    public Result<string> ExecuteSkill(string skillName, Dictionary<string, object> arguments)
+    public async Task<Result<string>> ExecuteSkillAsync(
+        string skillName,
+        Dictionary<string, object> arguments,
+        Guid sessionId,
+        string? providerName = null,
+        CancellationToken ct = default)
     {
         if (!_initialized)
         {
@@ -106,7 +114,7 @@ public sealed class SkillService
             }
 
             // 执行技能
-            var result = _executor.Execute(skill, arguments);
+            var result = await _executor.ExecuteAsync(skill, arguments, sessionId, providerName, ct);
 
             if (result.IsSuccess)
             {
