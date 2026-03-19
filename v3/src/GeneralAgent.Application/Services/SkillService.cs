@@ -4,6 +4,8 @@ using System.IO;
 using System.Threading;
 using System.Threading.Tasks;
 using GeneralAgent.Core.Common;
+using GeneralAgent.Infrastructure.Skills;
+using GeneralAgent.Infrastructure.Skills.Converters;
 using GeneralAgent.Infrastructure.Skills.Executors;
 using GeneralAgent.Infrastructure.Skills.Loaders;
 using GeneralAgent.Infrastructure.Skills.Models;
@@ -15,12 +17,15 @@ namespace GeneralAgent.Application.Services;
 /// <summary>
 /// 技能服务
 /// 负责技能的加载、管理和执行
+/// 自动将加载的技能注册为工具，支持 LLM Function Calling
 /// </summary>
 public sealed class SkillService
 {
     private readonly ISkillLoader _loader;
     private readonly ISkillRegistry _registry;
     private readonly ISkillExecutor _executor;
+    private readonly ToolRegistry _toolRegistry;
+    private readonly SkillToToolConverter _converter;
     private readonly ILogger<SkillService> _logger;
     private bool _initialized;
 
@@ -28,16 +33,21 @@ public sealed class SkillService
         ISkillLoader loader,
         ISkillRegistry registry,
         ISkillExecutor executor,
+        ToolRegistry toolRegistry,
+        SkillToToolConverter converter,
         ILogger<SkillService> logger)
     {
         _loader = loader ?? throw new ArgumentNullException(nameof(loader));
         _registry = registry ?? throw new ArgumentNullException(nameof(registry));
         _executor = executor ?? throw new ArgumentNullException(nameof(executor));
+        _toolRegistry = toolRegistry ?? throw new ArgumentNullException(nameof(toolRegistry));
+        _converter = converter ?? throw new ArgumentNullException(nameof(converter));
         _logger = logger ?? throw new ArgumentNullException(nameof(logger));
     }
 
     /// <summary>
     /// 从指定目录加载技能
+    /// 加载的技能会自动注册到 SkillRegistry 和 ToolRegistry
     /// </summary>
     public async Task<Result<int>> LoadSkillsAsync(string skillsDirectory, CancellationToken ct = default)
     {
@@ -61,15 +71,24 @@ public sealed class SkillService
 
             var skills = loadResult.Value!;
 
-            // 注册技能
+            // 注册技能到 SkillRegistry
             var registerResult = _registry.RegisterMany(skills);
             if (!registerResult.IsSuccess)
             {
                 return Result<int>.Failure(registerResult.Error!);
             }
 
+            // 将每个技能注册为工具到 ToolRegistry
+            foreach (var skill in skills)
+            {
+                var skillTool = new SkillTool(skill, _executor, _converter);
+                _toolRegistry.Register(skillTool);
+
+                _logger.LogDebug("注册 skill 为 tool: {SkillName}", skill.FullName);
+            }
+
             _initialized = true;
-            _logger.LogInformation("成功加载 {Count} 个技能", registerResult.Value);
+            _logger.LogInformation("成功加载 {Count} 个技能，并注册为工具", registerResult.Value);
 
             return Result<int>.Success(registerResult.Value);
         }

@@ -70,7 +70,9 @@ public sealed class SkillSystemIntegrationTests : IDisposable
         llmFactory.GetClient(Arg.Any<string?>()).Returns(llmClient);
 
         _executor = new SkillExecutor(llmFactory, messageRepo, NullLogger<SkillExecutor>.Instance);
-        _skillService = new SkillService(_loader, _registry, _executor, NullLogger<SkillService>.Instance);
+        var toolRegistry = new ToolRegistry(NullLogger<ToolRegistry>.Instance);
+        var converter = new Infrastructure.Skills.Converters.SkillToToolConverter();
+        _skillService = new SkillService(_loader, _registry, _executor, toolRegistry, converter, NullLogger<SkillService>.Instance);
     }
 
     /// <summary>
@@ -406,7 +408,9 @@ public sealed class SkillSystemIntegrationTests : IDisposable
     {
         // Arrange - 创建新的服务实例，不加载技能
         var freshRegistry = new SkillRegistry(NullLogger<SkillRegistry>.Instance);
-        var freshService = new SkillService(_loader, freshRegistry, _executor, NullLogger<SkillService>.Instance);
+        var toolRegistry = new ToolRegistry(NullLogger<ToolRegistry>.Instance);
+        var converter = new Infrastructure.Skills.Converters.SkillToToolConverter();
+        var freshService = new SkillService(_loader, freshRegistry, _executor, toolRegistry, converter, NullLogger<SkillService>.Instance);
         var arguments = new Dictionary<string, object>
         {
             ["user_name"] = "张三"
@@ -430,7 +434,9 @@ public sealed class SkillSystemIntegrationTests : IDisposable
     {
         // Arrange - 创建新的服务实例
         var freshRegistry = new SkillRegistry(NullLogger<SkillRegistry>.Instance);
-        var freshService = new SkillService(_loader, freshRegistry, _executor, NullLogger<SkillService>.Instance);
+        var toolRegistry = new ToolRegistry(NullLogger<ToolRegistry>.Instance);
+        var converter = new Infrastructure.Skills.Converters.SkillToToolConverter();
+        var freshService = new SkillService(_loader, freshRegistry, _executor, toolRegistry, converter, NullLogger<SkillService>.Instance);
         var nonExistentDir = Path.Combine(Path.GetTempPath(), Guid.NewGuid().ToString());
 
         // Act
