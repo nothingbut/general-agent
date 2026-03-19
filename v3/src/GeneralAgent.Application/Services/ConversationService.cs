@@ -1,6 +1,7 @@
 using System.Runtime.CompilerServices;
 using GeneralAgent.Core.Abstractions;
 using GeneralAgent.Core.Models;
+using Microsoft.Extensions.Logging;
 
 namespace GeneralAgent.Application.Services;
 
@@ -8,9 +9,9 @@ namespace GeneralAgent.Application.Services;
 /// 对话编排服务
 ///
 /// 职责：
-/// - 集成 SessionService 和 ILLMClient
+/// - 显式技能调用 (@skill, /skill) → ToolExecutor
+/// - 隐式工具调用 → ToolCallingOrchestrator
 /// - 处理 Message ↔ ChatMessage 转换
-/// - 支持 SystemPrompt 注入
 /// - 管理会话历史
 /// - 提供非流式和流式对话方法
 /// </summary>
@@ -19,10 +20,11 @@ public sealed class ConversationService
     private readonly ISessionRepository _sessionRepository;
     private readonly IMessageRepository _messageRepository;
     private readonly ILLMClientFactory _llmClientFactory;
-    private readonly SkillService? _skillService;
+    private readonly ToolCallingOrchestrator _orchestrator;
+    private readonly ToolExecutor _toolExecutor;
+    private readonly ILogger<ConversationService> _logger;
 
     private const string DefaultSystemPrompt = "你是一个有帮助的 AI 助手。";
-    private const string DefaultModel = "qwen3.5:0.8b";
 
     /// <summary>
     /// 初始化 ConversationService
@@ -31,12 +33,16 @@ public sealed class ConversationService
         ISessionRepository sessionRepository,
         IMessageRepository messageRepository,
         ILLMClientFactory llmClientFactory,
-        SkillService? skillService = null)
+        ToolCallingOrchestrator orchestrator,
+        ToolExecutor toolExecutor,
+        ILogger<ConversationService> logger)
     {
         _sessionRepository = sessionRepository ?? throw new ArgumentNullException(nameof(sessionRepository));
         _messageRepository = messageRepository ?? throw new ArgumentNullException(nameof(messageRepository));
         _llmClientFactory = llmClientFactory ?? throw new ArgumentNullException(nameof(llmClientFactory));
-        _skillService = skillService;
+        _orchestrator = orchestrator ?? throw new ArgumentNullException(nameof(orchestrator));
+        _toolExecutor = toolExecutor ?? throw new ArgumentNullException(nameof(toolExecutor));
+        _logger = logger ?? throw new ArgumentNullException(nameof(logger));
     }
 
     /// <summary>
@@ -64,44 +70,46 @@ public sealed class ConversationService
 
         string responseContent;
 
-        // 3. 检查是否是技能调用
-        if (_skillService != null && SkillCallParser.TryParse(userMessage, out var skillCall) && skillCall != null)
+        // 3. 检查是否是显式技能调用 (@skill 或 /skill)
+        if (SkillCallParser.TryParse(userMessage, out var skillCall) && skillCall != null)
         {
-            // 执行技能
-            var skillResult = await _skillService.ExecuteSkillAsync(
-                skillCall.SkillName,
-                skillCall.Arguments,
-                sessionId,
-                providerName,
-                ct);
+            _logger.LogDebug("检测到显式技能调用: {SkillName}", skillCall.SkillName);
 
-            if (skillResult.IsSuccess)
+            // 显式调用：直接执行工具
+            var toolCallObj = new ToolCall
             {
-                responseContent = skillResult.Value!;
-            }
-            else
+                Id = Guid.NewGuid().ToString(),
+                ToolName = skillCall.SkillName,
+                Arguments = skillCall.Arguments
+            };
+
+            var context = new ToolExecutionContext
             {
-                responseContent = $"❌ 技能执行失败: {skillResult.Error}";
-            }
+                SessionId = sessionId,
+                ProviderName = providerName
+            };
+
+            var result = await _toolExecutor.ExecuteAsync(toolCallObj, context, timeout: null, ct);
+
+            responseContent = result.IsSuccess
+                ? result.Content
+                : $"❌ {result.ErrorMessage}";
         }
         else
         {
-            // 4. 获取会话历史并转换为 ChatMessage
-            var history = await _messageRepository.GetBySessionAsync(sessionId, ct);
-            var chatMessages = ConvertToChatMessages(history);
+            _logger.LogDebug("普通消息，通过 Orchestrator 处理");
 
-            // 5. 调用 LLM
-            var client = _llmClientFactory.GetClient(providerName);
-            var request = new CompletionRequest
-            {
-                Model = DefaultModel,
-                Messages = chatMessages
-            };
-            var response = await client.CompleteAsync(request, ct);
-            responseContent = response.Content;
+            // 4. 隐式调用：通过 Orchestrator 处理
+            var history = await GetChatHistoryAsync(sessionId, ct);
+            var conversationResult = await _orchestrator.ExecuteAsync(sessionId, history, providerName, ct);
+
+            // 5. 保存对话历史（工具调用和结果）
+            await SaveConversationHistoryAsync(sessionId, conversationResult.Messages, ct);
+
+            responseContent = conversationResult.FinalResponse;
         }
 
-        // 6. 保存助手响应
+        // 6. 保存最终响应
         var assistantMsg = Message.CreateAssistant(sessionId, responseContent);
         await _messageRepository.CreateAsync(assistantMsg, ct);
 
@@ -117,6 +125,9 @@ public sealed class ConversationService
     /// <param name="ct">取消令牌</param>
     /// <returns>流式响应块</returns>
     /// <exception cref="InvalidOperationException">会话不存在</exception>
+    /// <remarks>
+    /// 注意：流式模式下，工具调用不支持流式返回，会一次性返回结果
+    /// </remarks>
     public async IAsyncEnumerable<string> SendMessageStreamAsync(
         Guid sessionId,
         string userMessage,
@@ -133,71 +144,65 @@ public sealed class ConversationService
 
         string fullResponse;
 
-        // 3. 检查是否是技能调用
-        if (_skillService != null && SkillCallParser.TryParse(userMessage, out var skillCall) && skillCall != null)
+        // 3. 检查是否是显式技能调用
+        if (SkillCallParser.TryParse(userMessage, out var skillCall) && skillCall != null)
         {
-            // 执行技能（非流式）
-            var skillResult = await _skillService.ExecuteSkillAsync(
-                skillCall.SkillName,
-                skillCall.Arguments,
-                sessionId,
-                providerName,
-                ct);
+            _logger.LogDebug("流式模式：检测到显式技能调用: {SkillName}", skillCall.SkillName);
 
-            if (skillResult.IsSuccess)
+            // 显式调用：直接执行工具（非流式）
+            var toolCallObj = new ToolCall
             {
-                fullResponse = skillResult.Value!;
-            }
-            else
+                Id = Guid.NewGuid().ToString(),
+                ToolName = skillCall.SkillName,
+                Arguments = skillCall.Arguments
+            };
+
+            var context = new ToolExecutionContext
             {
-                fullResponse = $"❌ 技能执行失败: {skillResult.Error}";
-            }
+                SessionId = sessionId,
+                ProviderName = providerName
+            };
+
+            var result = await _toolExecutor.ExecuteAsync(toolCallObj, context, timeout: null, ct);
+
+            fullResponse = result.IsSuccess
+                ? result.Content
+                : $"❌ {result.ErrorMessage}";
 
             // 一次性返回技能结果
             yield return fullResponse;
         }
         else
         {
-            // 4. 获取会话历史并转换为 ChatMessage
-            var history = await _messageRepository.GetBySessionAsync(sessionId, ct);
-            var chatMessages = ConvertToChatMessages(history);
+            _logger.LogDebug("流式模式：普通消息，通过 Orchestrator 处理（非流式）");
 
-            // 5. 调用 LLM 流式 API
-            var client = _llmClientFactory.GetClient(providerName);
-            var request = new CompletionRequest
-            {
-                Model = DefaultModel,
-                Messages = chatMessages
-            };
+            // 注意：目前 Orchestrator 不支持流式，直接返回完整结果
+            var history = await GetChatHistoryAsync(sessionId, ct);
+            var conversationResult = await _orchestrator.ExecuteAsync(sessionId, history, providerName, ct);
 
-            // 6. 流式返回，同时收集完整响应
-            var responseBuilder = new System.Text.StringBuilder();
-            await foreach (var chunk in client.StreamAsync(request, ct))
-            {
-                if (!string.IsNullOrEmpty(chunk.Delta))
-                {
-                    responseBuilder.Append(chunk.Delta);
-                    yield return chunk.Delta;
-                }
-            }
+            // 保存对话历史
+            await SaveConversationHistoryAsync(sessionId, conversationResult.Messages, ct);
 
-            fullResponse = responseBuilder.ToString();
+            fullResponse = conversationResult.FinalResponse;
+
+            // 一次性返回完整响应
+            yield return fullResponse;
         }
 
-        // 7. 保存完整的助手响应
+        // 4. 保存完整的助手响应
         var assistantMsg = Message.CreateAssistant(sessionId, fullResponse);
         await _messageRepository.CreateAsync(assistantMsg, ct);
     }
 
     /// <summary>
-    /// 转换 Message 列表为 ChatMessage 列表
-    /// 如果是首次对话，注入 SystemPrompt
+    /// 获取会话的聊天历史并转换为 ChatMessage 列表
     /// </summary>
-    private static List<ChatMessage> ConvertToChatMessages(List<Message> messages)
+    private async Task<List<ChatMessage>> GetChatHistoryAsync(Guid sessionId, CancellationToken ct)
     {
+        var messages = await _messageRepository.GetBySessionAsync(sessionId, ct);
         var chatMessages = new List<ChatMessage>();
 
-        // 如果没有消息，注入 SystemPrompt
+        // 如果没有历史消息，注入 SystemPrompt
         if (messages.Count == 0)
         {
             chatMessages.Add(new ChatMessage
@@ -220,5 +225,58 @@ public sealed class ConversationService
         }
 
         return chatMessages;
+    }
+
+    /// <summary>
+    /// 保存对话历史中的新消息（工具调用和结果）
+    /// </summary>
+    /// <remarks>
+    /// 只保存 Orchestrator 返回的新消息，不保存已存在的历史消息
+    /// </remarks>
+    private async Task SaveConversationHistoryAsync(
+        Guid sessionId,
+        List<ChatMessage> messages,
+        CancellationToken ct)
+    {
+        // 获取当前已保存的消息数量
+        var existingMessages = await _messageRepository.GetBySessionAsync(sessionId, ct);
+        var existingCount = existingMessages.Count;
+
+        // 跳过已存在的消息，只保存新消息
+        // Orchestrator 返回的 messages 包含完整历史 + 新的工具调用消息
+        for (var i = existingCount; i < messages.Count; i++)
+        {
+            var chatMsg = messages[i];
+
+            // 跳过最后一条助手响应（会在 SendMessageAsync 中单独保存）
+            if (i == messages.Count - 1 && chatMsg.Role == "assistant" && chatMsg.ToolCalls == null)
+            {
+                continue;
+            }
+
+            // 将 ChatMessage 转换为 Message 并保存
+            var role = chatMsg.Role switch
+            {
+                "user" => MessageRole.User,
+                "assistant" => MessageRole.Assistant,
+                "system" => MessageRole.System,
+                "tool" => MessageRole.Assistant, // 工具结果作为 Assistant 消息保存
+                _ => MessageRole.Assistant
+            };
+
+            var message = new Message
+            {
+                Id = Guid.NewGuid(),
+                SessionId = sessionId,
+                Role = role,
+                Content = chatMsg.Content,
+                CreatedAt = DateTime.UtcNow
+            };
+
+            await _messageRepository.CreateAsync(message, ct);
+
+            _logger.LogDebug("保存对话消息: Role={Role}, Content={Content}",
+                role, chatMsg.Content.Length > 50 ? chatMsg.Content[..50] + "..." : chatMsg.Content);
+        }
     }
 }
