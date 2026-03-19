@@ -10,6 +10,7 @@
   <ItemGroup>
     <PackageReference Include="coverlet.collector" />
     <PackageReference Include="Microsoft.NET.Test.Sdk" />
+    <PackageReference Include="NSubstitute" />
     <PackageReference Include="xunit" />
     <PackageReference Include="xunit.runner.visualstudio" />
     <PackageReference Include="FluentAssertions" />
@@ -22,6 +23,7 @@
     <ProjectReference Include="..\..\src\GeneralAgent.Infrastructure.LLM\GeneralAgent.Infrastructure.LLM.csproj" />
     <ProjectReference Include="..\..\src\GeneralAgent.Application\GeneralAgent.Application.csproj" />
     <ProjectReference Include="..\..\src\GeneralAgent.Hosts.Console\GeneralAgent.Hosts.Console.csproj" />
+    <ProjectReference Include="..\..\src\GeneralAgent.Infrastructure.Skills\GeneralAgent.Infrastructure.Skills.csproj" />
   </ItemGroup>
 
   <ItemGroup>
