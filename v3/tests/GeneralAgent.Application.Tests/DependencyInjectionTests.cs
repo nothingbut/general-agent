@@ -24,7 +24,12 @@ public class DependencyInjectionTests
                 { "LLM:DefaultProvider", "mock" },
                 { "LLM:Providers:mock:Name", "mock" },
                 { "LLM:Providers:mock:BaseUrl", "http://localhost" },
-                { "LLM:Providers:mock:TimeoutSeconds", "30" }
+                { "LLM:Providers:mock:TimeoutSeconds", "30" },
+                { "ToolCalling:Enabled", "true" },
+                { "ToolCalling:MaxRounds", "3" },
+                { "ToolCalling:InteractiveMode", "false" },
+                { "ToolCalling:AutoExtendBy", "5" },
+                { "ToolCalling:AbsoluteMaxRounds", "20" }
             })
             .Build();
 
@@ -33,7 +38,7 @@ public class DependencyInjectionTests
         // 按正确顺序注册依赖
         services.AddInfrastructure("Data Source=:memory:");
         services.AddLLMInfrastructure(config);
-        services.AddApplicationLayer();
+        services.AddApplicationLayer(config);
 
         return services;
     }
@@ -107,9 +112,15 @@ public class DependencyInjectionTests
     {
         // Arrange
         var services = new ServiceCollection();
+        var config = new ConfigurationBuilder()
+            .AddInMemoryCollection(new Dictionary<string, string?>
+            {
+                { "ToolCalling:Enabled", "true" }
+            })
+            .Build();
 
         // Act
-        var result = services.AddApplicationLayer();
+        var result = services.AddApplicationLayer(config);
 
         // Assert：应该返回相同的 IServiceCollection，支持链式调用
         Assert.Same(services, result);
