@@ -37,3 +37,15 @@ Thumbs.db
 # Environment variables
 .env
 .superpowers/
+
+# Rust
+v2/target/
+v2/Cargo.lock
+**/target/
+**/*.rdb
+
+# .NET
+**/bin/
+**/obj/
+*.user
+*.suo
