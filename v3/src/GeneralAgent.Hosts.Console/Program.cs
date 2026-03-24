@@ -26,7 +26,7 @@ try
     // 2. 注册各层服务
     builder.Services.AddInfrastructure(connectionString);
     builder.Services.AddLLMInfrastructure(builder.Configuration);
-    builder.Services.AddApplicationLayer();
+    builder.Services.AddApplicationLayer(builder.Configuration);
 
     // 3. 注册 AgentRepl
     builder.Services.AddSingleton<AgentRepl>();

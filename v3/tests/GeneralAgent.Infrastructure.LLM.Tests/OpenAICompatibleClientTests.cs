@@ -8,8 +8,8 @@ using GeneralAgent.Infrastructure.LLM;
 using GeneralAgent.Infrastructure.LLM.DTOs;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Options;
-using Moq;
-using Moq.Protected;
+using NSubstitute;
+using NSubstitute.ExceptionExtensions;
 
 namespace GeneralAgent.Infrastructure.LLM.Tests;
 
@@ -18,13 +18,13 @@ namespace GeneralAgent.Infrastructure.LLM.Tests;
 /// </summary>
 public sealed class OpenAICompatibleClientTests
 {
-    private readonly Mock<ILogger<OpenAICompatibleClient>> _loggerMock;
+    private readonly ILogger<OpenAICompatibleClient> _loggerMock;
     private readonly LLMProviderConfig _config;
     private readonly IOptions<LLMProviderConfig> _options;
 
     public OpenAICompatibleClientTests()
     {
-        _loggerMock = new Mock<ILogger<OpenAICompatibleClient>>();
+        _loggerMock = Substitute.For<ILogger<OpenAICompatibleClient>>();
         _config = new LLMProviderConfig
         {
             Name = "TestProvider",
@@ -78,7 +78,7 @@ public sealed class OpenAICompatibleClientTests
         };
 
         var httpClient = CreateMockHttpClient(mockResponse, HttpStatusCode.OK);
-        var client = new OpenAICompatibleClient(httpClient, _options, _loggerMock.Object);
+        var client = new OpenAICompatibleClient(httpClient, _options, _loggerMock);
 
         // Act
         var response = await client.CompleteAsync(request);
@@ -109,7 +109,7 @@ public sealed class OpenAICompatibleClientTests
 
         var mockResponse = CreateValidMockResponse();
         var httpClient = CreateMockHttpClient(mockResponse, HttpStatusCode.OK);
-        var client = new OpenAICompatibleClient(httpClient, _options, _loggerMock.Object);
+        var client = new OpenAICompatibleClient(httpClient, _options, _loggerMock);
 
         // Act
         var response = await client.CompleteAsync(request);
@@ -127,7 +127,7 @@ public sealed class OpenAICompatibleClientTests
         var httpClient = CreateMockHttpClient(
             content: "{\"error\": \"Unauthorized\"}",
             statusCode: HttpStatusCode.Unauthorized);
-        var client = new OpenAICompatibleClient(httpClient, _options, _loggerMock.Object);
+        var client = new OpenAICompatibleClient(httpClient, _options, _loggerMock);
 
         // Act & Assert
         var exception = await Assert.ThrowsAsync<LLMException>(
@@ -146,7 +146,7 @@ public sealed class OpenAICompatibleClientTests
         var httpClient = CreateMockHttpClient(
             content: "{\"error\": \"Model not found\"}",
             statusCode: HttpStatusCode.NotFound);
-        var client = new OpenAICompatibleClient(httpClient, _options, _loggerMock.Object);
+        var client = new OpenAICompatibleClient(httpClient, _options, _loggerMock);
 
         // Act & Assert
         var exception = await Assert.ThrowsAsync<LLMException>(
@@ -164,7 +164,7 @@ public sealed class OpenAICompatibleClientTests
         var httpClient = CreateMockHttpClient(
             content: "{\"error\": \"Rate limit exceeded\"}",
             statusCode: HttpStatusCode.TooManyRequests);
-        var client = new OpenAICompatibleClient(httpClient, _options, _loggerMock.Object);
+        var client = new OpenAICompatibleClient(httpClient, _options, _loggerMock);
 
         // Act & Assert
         var exception = await Assert.ThrowsAsync<LLMException>(
@@ -181,7 +181,7 @@ public sealed class OpenAICompatibleClientTests
         var httpClient = CreateMockHttpClient(
             content: "{\"error\": \"Internal server error\"}",
             statusCode: HttpStatusCode.InternalServerError);
-        var client = new OpenAICompatibleClient(httpClient, _options, _loggerMock.Object);
+        var client = new OpenAICompatibleClient(httpClient, _options, _loggerMock);
 
         // Act & Assert
         var exception = await Assert.ThrowsAsync<LLMException>(
@@ -199,7 +199,7 @@ public sealed class OpenAICompatibleClientTests
         var httpClient = CreateMockHttpClient(
             content: "{\"error\": \"Bad request\"}",
             statusCode: HttpStatusCode.BadRequest);
-        var client = new OpenAICompatibleClient(httpClient, _options, _loggerMock.Object);
+        var client = new OpenAICompatibleClient(httpClient, _options, _loggerMock);
 
         // Act & Assert
         var exception = await Assert.ThrowsAsync<LLMException>(
@@ -213,17 +213,9 @@ public sealed class OpenAICompatibleClientTests
     {
         // Arrange
         var request = CreateValidRequest();
-        var handlerMock = new Mock<HttpMessageHandler>();
-        handlerMock
-            .Protected()
-            .Setup<Task<HttpResponseMessage>>(
-                "SendAsync",
-                ItExpr.IsAny<HttpRequestMessage>(),
-                ItExpr.IsAny<CancellationToken>())
-            .ThrowsAsync(new HttpRequestException("Network error"));
-
-        var httpClient = new HttpClient(handlerMock.Object);
-        var client = new OpenAICompatibleClient(httpClient, _options, _loggerMock.Object);
+        var handler = new ThrowingHttpMessageHandler(new HttpRequestException("Network error"));
+        var httpClient = new HttpClient(handler);
+        var client = new OpenAICompatibleClient(httpClient, _options, _loggerMock);
 
         // Act & Assert
         var exception = await Assert.ThrowsAsync<LLMException>(
@@ -247,21 +239,9 @@ public sealed class OpenAICompatibleClientTests
         };
         var shortTimeoutOptions = Options.Create(shortTimeoutConfig);
 
-        var handlerMock = new Mock<HttpMessageHandler>();
-        handlerMock
-            .Protected()
-            .Setup<Task<HttpResponseMessage>>(
-                "SendAsync",
-                ItExpr.IsAny<HttpRequestMessage>(),
-                ItExpr.IsAny<CancellationToken>())
-            .Returns(async (HttpRequestMessage _, CancellationToken ct) =>
-            {
-                await Task.Delay(TimeSpan.FromSeconds(5), ct);
-                return new HttpResponseMessage(HttpStatusCode.OK);
-            });
-
-        var httpClient = new HttpClient(handlerMock.Object);
-        var client = new OpenAICompatibleClient(httpClient, shortTimeoutOptions, _loggerMock.Object);
+        var handler = new DelayingHttpMessageHandler(TimeSpan.FromSeconds(5));
+        var httpClient = new HttpClient(handler);
+        var client = new OpenAICompatibleClient(httpClient, shortTimeoutOptions, _loggerMock);
 
         // Act & Assert
         var exception = await Assert.ThrowsAsync<LLMException>(
@@ -279,7 +259,7 @@ public sealed class OpenAICompatibleClientTests
         var httpClient = CreateMockHttpClient(
             content: "Invalid JSON {]",
             statusCode: HttpStatusCode.OK);
-        var client = new OpenAICompatibleClient(httpClient, _options, _loggerMock.Object);
+        var client = new OpenAICompatibleClient(httpClient, _options, _loggerMock);
 
         // Act & Assert
         var exception = await Assert.ThrowsAsync<LLMException>(
@@ -298,7 +278,7 @@ public sealed class OpenAICompatibleClientTests
         var httpClient = CreateMockHttpClient(
             content: "null",
             statusCode: HttpStatusCode.OK);
-        var client = new OpenAICompatibleClient(httpClient, _options, _loggerMock.Object);
+        var client = new OpenAICompatibleClient(httpClient, _options, _loggerMock);
 
         // Act & Assert
         var exception = await Assert.ThrowsAsync<LLMException>(
@@ -329,7 +309,7 @@ public sealed class OpenAICompatibleClientTests
         };
 
         var httpClient = CreateMockHttpClient(mockResponse, HttpStatusCode.OK);
-        var client = new OpenAICompatibleClient(httpClient, _options, _loggerMock.Object);
+        var client = new OpenAICompatibleClient(httpClient, _options, _loggerMock);
 
         // Act & Assert
         var exception = await Assert.ThrowsAsync<LLMException>(
@@ -344,7 +324,7 @@ public sealed class OpenAICompatibleClientTests
     {
         // Arrange
         var httpClient = new HttpClient();
-        var client = new OpenAICompatibleClient(httpClient, _options, _loggerMock.Object);
+        var client = new OpenAICompatibleClient(httpClient, _options, _loggerMock);
 
         // Act
         var providerName = client.ProviderName;
@@ -368,7 +348,7 @@ data: [DONE]
 
 ";
         var httpClient = CreateMockStreamingHttpClient(sseContent, HttpStatusCode.OK);
-        var client = new OpenAICompatibleClient(httpClient, _options, _loggerMock.Object);
+        var client = new OpenAICompatibleClient(httpClient, _options, _loggerMock);
 
         // Act
         var chunks = new List<StreamChunk>();
@@ -398,7 +378,7 @@ data: [DONE]
 
 ";
         var httpClient = CreateMockStreamingHttpClient(sseContent, HttpStatusCode.OK);
-        var client = new OpenAICompatibleClient(httpClient, _options, _loggerMock.Object);
+        var client = new OpenAICompatibleClient(httpClient, _options, _loggerMock);
 
         // Act
         var chunks = new List<StreamChunk>();
@@ -428,7 +408,7 @@ data: [DONE]
 
 ";
         var httpClient = CreateMockStreamingHttpClient(sseContent, HttpStatusCode.OK);
-        var client = new OpenAICompatibleClient(httpClient, _options, _loggerMock.Object);
+        var client = new OpenAICompatibleClient(httpClient, _options, _loggerMock);
 
         // Act
         var chunks = new List<StreamChunk>();
@@ -458,7 +438,7 @@ data: [DONE]
 
 ";
         var httpClient = CreateMockStreamingHttpClient(sseContent, HttpStatusCode.OK);
-        var client = new OpenAICompatibleClient(httpClient, _options, _loggerMock.Object);
+        var client = new OpenAICompatibleClient(httpClient, _options, _loggerMock);
 
         // Act
         var chunks = new List<StreamChunk>();
@@ -487,7 +467,7 @@ data: {""id"":""test-2"",""object"":""chat.completion.chunk"",""created"":123456
 
 ";
         var httpClient = CreateMockStreamingHttpClient(sseContent, HttpStatusCode.OK);
-        var client = new OpenAICompatibleClient(httpClient, _options, _loggerMock.Object);
+        var client = new OpenAICompatibleClient(httpClient, _options, _loggerMock);
 
         // Act
         var chunks = new List<StreamChunk>();
@@ -509,7 +489,7 @@ data: {""id"":""test-2"",""object"":""chat.completion.chunk"",""created"":123456
         var httpClient = CreateMockStreamingHttpClient(
             content: "{\"error\": \"Unauthorized\"}",
             statusCode: HttpStatusCode.Unauthorized);
-        var client = new OpenAICompatibleClient(httpClient, _options, _loggerMock.Object);
+        var client = new OpenAICompatibleClient(httpClient, _options, _loggerMock);
 
         // Act & Assert
         var exception = await Assert.ThrowsAsync<LLMException>(async () =>
@@ -529,17 +509,9 @@ data: {""id"":""test-2"",""object"":""chat.completion.chunk"",""created"":123456
     {
         // Arrange
         var request = CreateValidRequest();
-        var handlerMock = new Mock<HttpMessageHandler>();
-        handlerMock
-            .Protected()
-            .Setup<Task<HttpResponseMessage>>(
-                "SendAsync",
-                ItExpr.IsAny<HttpRequestMessage>(),
-                ItExpr.IsAny<CancellationToken>())
-            .ThrowsAsync(new HttpRequestException("Network error"));
-
-        var httpClient = new HttpClient(handlerMock.Object);
-        var client = new OpenAICompatibleClient(httpClient, _options, _loggerMock.Object);
+        var handler = new ThrowingHttpMessageHandler(new HttpRequestException("Network error"));
+        var httpClient = new HttpClient(handler);
+        var client = new OpenAICompatibleClient(httpClient, _options, _loggerMock);
 
         // Act & Assert
         var exception = await Assert.ThrowsAsync<LLMException>(async () =>
@@ -568,21 +540,9 @@ data: {""id"":""test-2"",""object"":""chat.completion.chunk"",""created"":123456
         };
         var shortTimeoutOptions = Options.Create(shortTimeoutConfig);
 
-        var handlerMock = new Mock<HttpMessageHandler>();
-        handlerMock
-            .Protected()
-            .Setup<Task<HttpResponseMessage>>(
-                "SendAsync",
-                ItExpr.IsAny<HttpRequestMessage>(),
-                ItExpr.IsAny<CancellationToken>())
-            .Returns(async (HttpRequestMessage _, CancellationToken ct) =>
-            {
-                await Task.Delay(TimeSpan.FromSeconds(5), ct);
-                return new HttpResponseMessage(HttpStatusCode.OK);
-            });
-
-        var httpClient = new HttpClient(handlerMock.Object);
-        var client = new OpenAICompatibleClient(httpClient, shortTimeoutOptions, _loggerMock.Object);
+        var handler = new DelayingHttpMessageHandler(TimeSpan.FromSeconds(5));
+        var httpClient = new HttpClient(handler);
+        var client = new OpenAICompatibleClient(httpClient, shortTimeoutOptions, _loggerMock);
 
         // Act & Assert
         var exception = await Assert.ThrowsAsync<LLMException>(async () =>
@@ -612,7 +572,7 @@ data: [DONE]
 
 ";
         var httpClient = CreateMockStreamingHttpClient(sseContent, HttpStatusCode.OK);
-        var client = new OpenAICompatibleClient(httpClient, _options, _loggerMock.Object);
+        var client = new OpenAICompatibleClient(httpClient, _options, _loggerMock);
 
         // Act
         var chunks = new List<StreamChunk>();
@@ -645,7 +605,7 @@ data: [DONE]
 
 ";
         var httpClient = CreateMockStreamingHttpClient(sseContent, HttpStatusCode.OK);
-        var client = new OpenAICompatibleClient(httpClient, _options, _loggerMock.Object);
+        var client = new OpenAICompatibleClient(httpClient, _options, _loggerMock);
 
         // Act
         var chunks = new List<StreamChunk>();
@@ -681,7 +641,7 @@ data: [DONE]
         };
         var realOptions = Options.Create(realConfig);
         var httpClient = new HttpClient();
-        var client = new OpenAICompatibleClient(httpClient, realOptions, _loggerMock.Object);
+        var client = new OpenAICompatibleClient(httpClient, realOptions, _loggerMock);
 
         var request = new CompletionRequest
         {
@@ -760,39 +720,72 @@ data: [DONE]
         string content,
         HttpStatusCode statusCode)
     {
-        var handlerMock = new Mock<HttpMessageHandler>();
-        handlerMock
-            .Protected()
-            .Setup<Task<HttpResponseMessage>>(
-                "SendAsync",
-                ItExpr.IsAny<HttpRequestMessage>(),
-                ItExpr.IsAny<CancellationToken>())
-            .ReturnsAsync(new HttpResponseMessage
-            {
-                StatusCode = statusCode,
-                Content = new StringContent(content, Encoding.UTF8, "application/json")
-            });
+        var handler = new MockHttpMessageHandler(new HttpResponseMessage
+        {
+            StatusCode = statusCode,
+            Content = new StringContent(content, Encoding.UTF8, "application/json")
+        });
 
-        return new HttpClient(handlerMock.Object);
+        return new HttpClient(handler);
     }
 
     private static HttpClient CreateMockStreamingHttpClient(
         string content,
         HttpStatusCode statusCode)
     {
-        var handlerMock = new Mock<HttpMessageHandler>();
-        handlerMock
-            .Protected()
-            .Setup<Task<HttpResponseMessage>>(
-                "SendAsync",
-                ItExpr.IsAny<HttpRequestMessage>(),
-                ItExpr.IsAny<CancellationToken>())
-            .ReturnsAsync(new HttpResponseMessage
-            {
-                StatusCode = statusCode,
-                Content = new StringContent(content, Encoding.UTF8, "text/event-stream")
-            });
+        var handler = new MockHttpMessageHandler(new HttpResponseMessage
+        {
+            StatusCode = statusCode,
+            Content = new StringContent(content, Encoding.UTF8, "text/event-stream")
+        });
 
-        return new HttpClient(handlerMock.Object);
+        return new HttpClient(handler);
+    }
+
+    // Helper classes for HttpMessageHandler mocking
+    private class MockHttpMessageHandler : HttpMessageHandler
+    {
+        private readonly HttpResponseMessage _response;
+
+        public MockHttpMessageHandler(HttpResponseMessage response)
+        {
+            _response = response;
+        }
+
+        protected override Task<HttpResponseMessage> SendAsync(HttpRequestMessage request, CancellationToken cancellationToken)
+        {
+            return Task.FromResult(_response);
+        }
+    }
+
+    private class ThrowingHttpMessageHandler : HttpMessageHandler
+    {
+        private readonly Exception _exception;
+
+        public ThrowingHttpMessageHandler(Exception exception)
+        {
+            _exception = exception;
+        }
+
+        protected override Task<HttpResponseMessage> SendAsync(HttpRequestMessage request, CancellationToken cancellationToken)
+        {
+            throw _exception;
+        }
+    }
+
+    private class DelayingHttpMessageHandler : HttpMessageHandler
+    {
+        private readonly TimeSpan _delay;
+
+        public DelayingHttpMessageHandler(TimeSpan delay)
+        {
+            _delay = delay;
+        }
+
+        protected override async Task<HttpResponseMessage> SendAsync(HttpRequestMessage request, CancellationToken cancellationToken)
+        {
+            await Task.Delay(_delay, cancellationToken);
+            return new HttpResponseMessage(HttpStatusCode.OK);
+        }
     }
 }

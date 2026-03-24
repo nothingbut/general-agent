@@ -1,3 +1,5 @@
+using System.Text.Json.Nodes;
+
 namespace GeneralAgent.Core.Models;
 
 /// <summary>
@@ -30,4 +32,10 @@ public sealed record CompletionRequest
     /// 最大生成 token 数（可选）
     /// </summary>
     public int? MaxTokens { get; init; }
+
+    /// <summary>
+    /// 可用的工具列表（序列化后的 JSON 数组）
+    /// 用于 Tool Calling 场景
+    /// </summary>
+    public JsonArray? Tools { get; init; }
 }

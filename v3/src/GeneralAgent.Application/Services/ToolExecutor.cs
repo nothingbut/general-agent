@@ -1,8 +1,5 @@
 using System.Diagnostics;
-using System.Runtime.CompilerServices;
-using System.Text.Json;
 using GeneralAgent.Core.Abstractions;
-using GeneralAgent.Core.Common;
 using GeneralAgent.Core.Models;
 using Microsoft.Extensions.Logging;
 
@@ -10,139 +7,234 @@ namespace GeneralAgent.Application.Services;
 
 /// <summary>
 /// 工具执行器
-/// 负责执行单个工具或批量执行多个工具
-/// 提供性能监控和错误处理能力
+/// 负责执行工具调用、超时控制、错误处理和结果封装
+/// 线程安全，支持并发执行
 /// </summary>
 public sealed class ToolExecutor
 {
     private readonly ToolRegistry _registry;
     private readonly ILogger<ToolExecutor> _logger;
+    private readonly TimeSpan _defaultTimeout = TimeSpan.FromSeconds(30);
 
     public ToolExecutor(
         ToolRegistry registry,
         ILogger<ToolExecutor> logger)
     {
-        _registry = registry ?? throw new ArgumentNullException(nameof(registry));
-        _logger = logger ?? throw new ArgumentNullException(nameof(logger));
+        _registry = registry;
+        _logger = logger;
     }
 
     /// <summary>
-    /// 执行单个工具
+    /// 执行单个工具调用
     /// </summary>
-    public async Task<Result<string>> ExecuteAsync(
-        string toolName,
-        Dictionary<string, object> arguments,
+    /// <param name="call">工具调用请求</param>
+    /// <param name="context">执行上下文</param>
+    /// <param name="timeout">超时时间（可选，默认 30 秒）</param>
+    /// <param name="ct">取消令牌</param>
+    /// <returns>工具调用结果</returns>
+    public async Task<ToolCallResult> ExecuteAsync(
+        ToolCall call,
         ToolExecutionContext context,
+        TimeSpan? timeout = null,
         CancellationToken ct = default)
     {
+        ArgumentNullException.ThrowIfNull(call);
+        ArgumentNullException.ThrowIfNull(context);
+
+        var stopwatch = Stopwatch.StartNew();
+        var effectiveTimeout = timeout ?? _defaultTimeout;
+
         try
         {
-            _logger.LogDebug("执行工具: {ToolName}, 参数: {Arguments}",
-                toolName, JsonSerializer.Serialize(arguments));
+            _logger.LogDebug(
+                "开始执行工具调用: {ToolName} (ID: {CallId})",
+                call.ToolName,
+                call.Id);
 
-            var tool = _registry.GetTool(toolName);
+            // 查找工具
+            var tool = _registry.GetTool(call.ToolName);
             if (tool == null)
             {
-                _logger.LogWarning("工具不存在: {ToolName}", toolName);
-                return Result<string>.Failure($"工具不存在: {toolName}");
+                _logger.LogWarning(
+                    "工具未找到: {ToolName} (ID: {CallId})",
+                    call.ToolName,
+                    call.Id);
+
+                stopwatch.Stop();
+                return ToolCallResult.Failure(
+                    call,
+                    $"工具未找到: {call.ToolName}",
+                    stopwatch.ElapsedMilliseconds);
             }
 
-            var startTime = Stopwatch.GetTimestamp();
-            var result = await tool.ExecuteAsync(arguments, context, ct);
-            var elapsed = Stopwatch.GetElapsedTime(startTime);
+            // 执行工具（带超时控制）
+            using var timeoutCts = new CancellationTokenSource(effectiveTimeout);
+            using var linkedCts = CancellationTokenSource.CreateLinkedTokenSource(ct, timeoutCts.Token);
+
+            var result = await tool.ExecuteAsync(
+                call.Arguments,
+                context,
+                linkedCts.Token);
+
+            stopwatch.Stop();
 
             if (result.IsSuccess)
             {
                 _logger.LogInformation(
-                    "工具执行成功: {ToolName}, 耗时: {Elapsed}ms, 输出长度: {Length}",
-                    toolName, elapsed.TotalMilliseconds, result.Value?.Length ?? 0);
+                    "工具执行成功: {ToolName} (ID: {CallId}) - 耗时 {ElapsedMs}ms",
+                    call.ToolName,
+                    call.Id,
+                    stopwatch.ElapsedMilliseconds);
+
+                return ToolCallResult.Success(
+                    call,
+                    result.Value!,
+                    stopwatch.ElapsedMilliseconds);
             }
             else
             {
                 _logger.LogWarning(
-                    "工具执行失败: {ToolName}, 错误: {Error}",
-                    toolName, result.Error);
-            }
+                    "工具执行失败: {ToolName} (ID: {CallId}) - {Error}",
+                    call.ToolName,
+                    call.Id,
+                    result.Error);
 
-            return result;
+                return ToolCallResult.Failure(
+                    call,
+                    result.Error!,
+                    stopwatch.ElapsedMilliseconds);
+            }
+        }
+        catch (OperationCanceledException) when (ct.IsCancellationRequested)
+        {
+            // 用户取消
+            stopwatch.Stop();
+            _logger.LogInformation(
+                "工具执行已取消: {ToolName} (ID: {CallId})",
+                call.ToolName,
+                call.Id);
+
+            return ToolCallResult.Failure(
+                call,
+                "工具执行已取消",
+                stopwatch.ElapsedMilliseconds);
+        }
+        catch (OperationCanceledException)
+        {
+            // 超时
+            stopwatch.Stop();
+            _logger.LogWarning(
+                "工具执行超时: {ToolName} (ID: {CallId}) - 超时时间 {TimeoutSeconds}s",
+                call.ToolName,
+                call.Id,
+                effectiveTimeout.TotalSeconds);
+
+            return ToolCallResult.Failure(
+                call,
+                $"工具执行超时（{effectiveTimeout.TotalSeconds}秒）",
+                stopwatch.ElapsedMilliseconds);
         }
         catch (Exception ex)
         {
-            _logger.LogError(ex, "执行工具异常: {ToolName}", toolName);
-            return Result<string>.Failure($"执行工具异常: {ex.Message}");
+            // 未预期的异常
+            stopwatch.Stop();
+            _logger.LogError(
+                ex,
+                "工具执行失败: {ToolName} (ID: {CallId}) - 异常: {Message}",
+                call.ToolName,
+                call.Id,
+                ex.Message);
+
+            return ToolCallResult.Failure(
+                call,
+                $"工具执行失败: {ex.Message}",
+                stopwatch.ElapsedMilliseconds);
         }
     }
 
     /// <summary>
-    /// 流式执行工具
+    /// 批量执行工具调用（并行）
     /// </summary>
-    public async IAsyncEnumerable<string> ExecuteStreamAsync(
-        string toolName,
-        Dictionary<string, object> arguments,
+    /// <param name="calls">工具调用请求列表</param>
+    /// <param name="context">执行上下文</param>
+    /// <param name="timeout">超时时间（可选，默认 30 秒）</param>
+    /// <param name="ct">取消令牌</param>
+    /// <returns>工具调用结果列表（顺序与输入一致）</returns>
+    public async Task<IReadOnlyList<ToolCallResult>> ExecuteManyAsync(
+        IEnumerable<ToolCall> calls,
         ToolExecutionContext context,
-        [EnumeratorCancellation] CancellationToken ct = default)
+        TimeSpan? timeout = null,
+        CancellationToken ct = default)
     {
-        var tool = _registry.GetTool(toolName);
+        ArgumentNullException.ThrowIfNull(calls);
+        ArgumentNullException.ThrowIfNull(context);
+
+        var callsList = calls.ToList();
+
+        _logger.LogInformation(
+            "开始批量执行工具调用: {Count} 个工具",
+            callsList.Count);
+
+        // 并行执行所有工具调用
+        var tasks = callsList.Select(call =>
+            ExecuteAsync(call, context, timeout, ct));
+
+        var results = await Task.WhenAll(tasks);
+
+        var successCount = results.Count(r => r.IsSuccess);
+        var failureCount = results.Count(r => !r.IsSuccess);
+
+        _logger.LogInformation(
+            "批量执行完成: 成功 {SuccessCount}，失败 {FailureCount}",
+            successCount,
+            failureCount);
+
+        return results;
+    }
+
+    /// <summary>
+    /// 流式执行工具调用
+    /// 用于需要实时返回结果的工具（如 LLM 调用）
+    /// </summary>
+    /// <param name="call">工具调用请求</param>
+    /// <param name="context">执行上下文</param>
+    /// <param name="ct">取消令牌</param>
+    /// <returns>异步枚举，逐个返回结果块</returns>
+    public async IAsyncEnumerable<string> ExecuteStreamAsync(
+        ToolCall call,
+        ToolExecutionContext context,
+        [System.Runtime.CompilerServices.EnumeratorCancellation] CancellationToken ct = default)
+    {
+        ArgumentNullException.ThrowIfNull(call);
+        ArgumentNullException.ThrowIfNull(context);
+
+        _logger.LogDebug(
+            "开始流式执行工具: {ToolName} (ID: {CallId})",
+            call.ToolName,
+            call.Id);
+
+        // 查找工具
+        var tool = _registry.GetTool(call.ToolName);
         if (tool == null)
         {
-            _logger.LogWarning("工具不存在: {ToolName}", toolName);
-            yield return $"❌ 工具不存在: {toolName}";
+            _logger.LogWarning(
+                "工具未找到: {ToolName} (ID: {CallId})",
+                call.ToolName,
+                call.Id);
+
+            yield return $"错误: 工具未找到 - {call.ToolName}";
             yield break;
         }
 
-        _logger.LogDebug("流式执行工具: {ToolName}", toolName);
-        var startTime = Stopwatch.GetTimestamp();
-
-        await foreach (var chunk in tool.ExecuteStreamAsync(arguments, context, ct))
+        // 流式执行工具
+        await foreach (var chunk in tool.ExecuteStreamAsync(call.Arguments, context, ct))
         {
             yield return chunk;
         }
 
-        var elapsed = Stopwatch.GetElapsedTime(startTime);
-        _logger.LogInformation(
-            "工具流式执行完成: {ToolName}, 耗时: {Elapsed}ms",
-            toolName, elapsed.TotalMilliseconds);
-    }
-
-    /// <summary>
-    /// 并行执行多个工具
-    /// </summary>
-    public async Task<List<ToolCallResult>> ExecuteManyAsync(
-        IEnumerable<ToolCall> toolCalls,
-        ToolExecutionContext context,
-        CancellationToken ct = default)
-    {
-        var tasks = toolCalls.Select(async toolCall =>
-        {
-            var arguments = ParseArguments(toolCall.Arguments);
-            var result = await ExecuteAsync(toolCall.FunctionName, arguments, context, ct);
-
-            return new ToolCallResult
-            {
-                ToolCallId = toolCall.Id,
-                ToolName = toolCall.FunctionName,
-                Content = result.IsSuccess ? result.Value! : $"错误: {result.Error}",
-                IsError = !result.IsSuccess
-            };
-        });
-
-        return (await Task.WhenAll(tasks)).ToList();
-    }
-
-    /// <summary>
-    /// 解析工具参数JSON
-    /// </summary>
-    private Dictionary<string, object> ParseArguments(string argumentsJson)
-    {
-        try
-        {
-            return JsonSerializer.Deserialize<Dictionary<string, object>>(argumentsJson)
-                ?? new Dictionary<string, object>();
-        }
-        catch (Exception ex)
-        {
-            _logger.LogWarning(ex, "解析工具参数失败: {Arguments}", argumentsJson);
-            return new Dictionary<string, object>();
-        }
+        _logger.LogDebug(
+            "流式执行完成: {ToolName} (ID: {CallId})",
+            call.ToolName,
+            call.Id);
     }
 }

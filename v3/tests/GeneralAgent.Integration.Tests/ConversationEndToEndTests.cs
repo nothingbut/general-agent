@@ -45,7 +45,7 @@ public class ConversationEndToEndTests : IDisposable
         // 注册所有层
         services.AddInfrastructure($"Data Source={_dbPath}");
         services.AddLLMInfrastructure(configuration);
-        services.AddApplicationLayer();
+        services.AddApplicationLayer(configuration);
 
         // 注册日志
         services.AddLogging(builder => builder.AddConsole().SetMinimumLevel(LogLevel.Warning));

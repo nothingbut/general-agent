@@ -6,7 +6,7 @@ using GeneralAgent.Infrastructure.Skills.Loaders;
 using GeneralAgent.Infrastructure.Skills.Parsers;
 using FluentAssertions;
 using Microsoft.Extensions.Logging;
-using Moq;
+using NSubstitute;
 
 namespace GeneralAgent.Infrastructure.Skills.Tests.Loaders;
 
@@ -14,16 +14,16 @@ public class FileSystemSkillLoaderTests : IDisposable
 {
     private readonly string _tempDir;
     private readonly FileSystemSkillLoader _loader;
-    private readonly Mock<ILogger<FileSystemSkillLoader>> _loggerMock;
+    private readonly ILogger<FileSystemSkillLoader> _loggerMock;
 
     public FileSystemSkillLoaderTests()
     {
         _tempDir = Path.Combine(Path.GetTempPath(), Guid.NewGuid().ToString());
         Directory.CreateDirectory(_tempDir);
 
-        _loggerMock = new Mock<ILogger<FileSystemSkillLoader>>();
+        _loggerMock = Substitute.For<ILogger<FileSystemSkillLoader>>();
         var parser = new MarkdownSkillParser();
-        _loader = new FileSystemSkillLoader(parser, _loggerMock.Object);
+        _loader = new FileSystemSkillLoader(parser, _loggerMock);
     }
 
     [Fact]
@@ -147,14 +147,12 @@ public class FileSystemSkillLoaderTests : IDisposable
         result.Value![0].Name.Should().Be("valid");
 
         // 验证记录了警告日志
-        _loggerMock.Verify(
-            x => x.Log(
-                LogLevel.Warning,
-                It.IsAny<EventId>(),
-                It.Is<It.IsAnyType>((v, t) => v.ToString()!.Contains("invalid.md")),
-                It.IsAny<Exception>(),
-                It.IsAny<Func<It.IsAnyType, Exception?, string>>()),
-            Times.Once);
+        _loggerMock.Received(1).Log(
+            LogLevel.Warning,
+            Arg.Any<EventId>(),
+            Arg.Is<object>(v => v.ToString()!.Contains("invalid.md")),
+            Arg.Any<Exception>(),
+            Arg.Any<Func<object, Exception?, string>>());
     }
 
     [Fact]

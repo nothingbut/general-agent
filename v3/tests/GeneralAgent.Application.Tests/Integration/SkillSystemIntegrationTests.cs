@@ -1,14 +1,19 @@
 using System;
 using System.Collections.Generic;
 using System.IO;
+using System.Linq;
+using System.Threading;
 using System.Threading.Tasks;
 using FluentAssertions;
 using GeneralAgent.Application.Services;
+using GeneralAgent.Core.Abstractions;
+using GeneralAgent.Core.Models;
 using GeneralAgent.Infrastructure.Skills.Executors;
 using GeneralAgent.Infrastructure.Skills.Loaders;
 using GeneralAgent.Infrastructure.Skills.Parsers;
 using GeneralAgent.Infrastructure.Skills.Registry;
 using Microsoft.Extensions.Logging.Abstractions;
+using NSubstitute;
 using Xunit;
 
 namespace GeneralAgent.Application.Tests.Integration;
@@ -40,8 +45,34 @@ public sealed class SkillSystemIntegrationTests : IDisposable
         _parser = new MarkdownSkillParser();
         _loader = new FileSystemSkillLoader(_parser, NullLogger<FileSystemSkillLoader>.Instance);
         _registry = new SkillRegistry(NullLogger<SkillRegistry>.Instance);
-        _executor = new SkillExecutor(NullLogger<SkillExecutor>.Instance);
-        _skillService = new SkillService(_loader, _registry, _executor, NullLogger<SkillService>.Instance);
+
+        // 创建 SkillExecutor 所需的 Mock 依赖
+        var llmClient = Substitute.For<ILLMClient>();
+        var llmFactory = Substitute.For<ILLMClientFactory>();
+        var messageRepo = Substitute.For<IMessageRepository>();
+
+        // 配置 Mock LLM Client 返回渲染后的模板内容（模拟 LLM 回显）
+        llmClient.CompleteAsync(Arg.Any<CompletionRequest>(), Arg.Any<CancellationToken>())
+            .Returns(callInfo =>
+            {
+                var request = callInfo.Arg<CompletionRequest>();
+                var userMessage = request.Messages?.FirstOrDefault(m => m.Role == "user");
+                var content = userMessage?.Content ?? "默认响应";
+
+                return Task.FromResult(new CompletionResponse
+                {
+                    Content = content,
+                    Usage = new TokenUsage { PromptTokens = 10, CompletionTokens = 20 },
+                    Timestamp = DateTime.UtcNow
+                });
+            });
+
+        llmFactory.GetClient(Arg.Any<string?>()).Returns(llmClient);
+
+        _executor = new SkillExecutor(llmFactory, messageRepo, NullLogger<SkillExecutor>.Instance);
+        var toolRegistry = new ToolRegistry(NullLogger<ToolRegistry>.Instance);
+        var converter = new Infrastructure.Skills.Converters.SkillToToolConverter();
+        _skillService = new SkillService(_loader, _registry, _executor, toolRegistry, converter, NullLogger<SkillService>.Instance);
     }
 
     /// <summary>
@@ -206,7 +237,12 @@ public sealed class SkillSystemIntegrationTests : IDisposable
         };
 
         // Act
-        var result = _skillService.ExecuteSkill("greeting", arguments);
+        var result = await _skillService.ExecuteSkillAsync(
+            "greeting",
+            arguments,
+            Guid.NewGuid(),
+            null,
+            CancellationToken.None);
 
         // Assert
         result.IsSuccess.Should().BeTrue();
@@ -228,7 +264,12 @@ public sealed class SkillSystemIntegrationTests : IDisposable
         };
 
         // Act
-        var result = _skillService.ExecuteSkill("reminder", arguments);
+        var result = await _skillService.ExecuteSkillAsync(
+            "reminder",
+            arguments,
+            Guid.NewGuid(),
+            null,
+            CancellationToken.None);
 
         // Assert
         result.IsSuccess.Should().BeTrue();
@@ -251,7 +292,12 @@ public sealed class SkillSystemIntegrationTests : IDisposable
         };
 
         // Act
-        var result = _skillService.ExecuteSkill("task", arguments);
+        var result = await _skillService.ExecuteSkillAsync(
+            "task",
+            arguments,
+            Guid.NewGuid(),
+            null,
+            CancellationToken.None);
 
         // Assert
         result.IsSuccess.Should().BeTrue();
@@ -273,7 +319,12 @@ public sealed class SkillSystemIntegrationTests : IDisposable
         };
 
         // Act - 使用完整命名空间
-        var result = _skillService.ExecuteSkill("personal:greeting", arguments);
+        var result = await _skillService.ExecuteSkillAsync(
+            "personal:greeting",
+            arguments,
+            Guid.NewGuid(),
+            null,
+            CancellationToken.None);
 
         // Assert
         result.IsSuccess.Should().BeTrue();
@@ -294,7 +345,12 @@ public sealed class SkillSystemIntegrationTests : IDisposable
         };
 
         // Act
-        var result = _skillService.ExecuteSkill("format", arguments);
+        var result = await _skillService.ExecuteSkillAsync(
+            "format",
+            arguments,
+            Guid.NewGuid(),
+            null,
+            CancellationToken.None);
 
         // Assert
         result.IsSuccess.Should().BeTrue();
@@ -315,7 +371,12 @@ public sealed class SkillSystemIntegrationTests : IDisposable
         var arguments = new Dictionary<string, object>();
 
         // Act
-        var result = _skillService.ExecuteSkill("nonexistent_skill", arguments);
+        var result = await _skillService.ExecuteSkillAsync(
+            "nonexistent_skill",
+            arguments,
+            Guid.NewGuid(),
+            null,
+            CancellationToken.None);
 
         // Assert
         result.IsSuccess.Should().BeFalse();
@@ -330,7 +391,12 @@ public sealed class SkillSystemIntegrationTests : IDisposable
         var arguments = new Dictionary<string, object>(); // 缺少 user_name
 
         // Act
-        var result = _skillService.ExecuteSkill("greeting", arguments);
+        var result = await _skillService.ExecuteSkillAsync(
+            "greeting",
+            arguments,
+            Guid.NewGuid(),
+            null,
+            CancellationToken.None);
 
         // Assert
         result.IsSuccess.Should().BeFalse();
@@ -338,18 +404,25 @@ public sealed class SkillSystemIntegrationTests : IDisposable
     }
 
     [Fact]
-    public void ExecuteSkill_BeforeLoadingSkills_ReturnsFailure()
+    public async Task ExecuteSkill_BeforeLoadingSkills_ReturnsFailure()
     {
         // Arrange - 创建新的服务实例，不加载技能
         var freshRegistry = new SkillRegistry(NullLogger<SkillRegistry>.Instance);
-        var freshService = new SkillService(_loader, freshRegistry, _executor, NullLogger<SkillService>.Instance);
+        var toolRegistry = new ToolRegistry(NullLogger<ToolRegistry>.Instance);
+        var converter = new Infrastructure.Skills.Converters.SkillToToolConverter();
+        var freshService = new SkillService(_loader, freshRegistry, _executor, toolRegistry, converter, NullLogger<SkillService>.Instance);
         var arguments = new Dictionary<string, object>
         {
             ["user_name"] = "张三"
         };
 
         // Act
-        var result = freshService.ExecuteSkill("greeting", arguments);
+        var result = await freshService.ExecuteSkillAsync(
+            "greeting",
+            arguments,
+            Guid.NewGuid(),
+            null,
+            CancellationToken.None);
 
         // Assert
         result.IsSuccess.Should().BeFalse();
@@ -361,7 +434,9 @@ public sealed class SkillSystemIntegrationTests : IDisposable
     {
         // Arrange - 创建新的服务实例
         var freshRegistry = new SkillRegistry(NullLogger<SkillRegistry>.Instance);
-        var freshService = new SkillService(_loader, freshRegistry, _executor, NullLogger<SkillService>.Instance);
+        var toolRegistry = new ToolRegistry(NullLogger<ToolRegistry>.Instance);
+        var converter = new Infrastructure.Skills.Converters.SkillToToolConverter();
+        var freshService = new SkillService(_loader, freshRegistry, _executor, toolRegistry, converter, NullLogger<SkillService>.Instance);
         var nonExistentDir = Path.Combine(Path.GetTempPath(), Guid.NewGuid().ToString());
 
         // Act
@@ -388,7 +463,12 @@ public sealed class SkillSystemIntegrationTests : IDisposable
         parseSuccess.Should().BeTrue();
 
         // Act - 执行技能
-        var executeResult = _skillService.ExecuteSkill(skillCall!.SkillName, skillCall.Arguments);
+        var executeResult = await _skillService.ExecuteSkillAsync(
+            skillCall!.SkillName,
+            skillCall.Arguments,
+            Guid.NewGuid(),
+            null,
+            CancellationToken.None);
 
         // Assert
         executeResult.IsSuccess.Should().BeTrue();
@@ -411,7 +491,12 @@ public sealed class SkillSystemIntegrationTests : IDisposable
         skillCall!.Arguments["tags"] = new[] { "bug", "p0", "hotfix" };
 
         // Act - 执行
-        var executeResult = _skillService.ExecuteSkill(skillCall.SkillName, skillCall.Arguments);
+        var executeResult = await _skillService.ExecuteSkillAsync(
+            skillCall.SkillName,
+            skillCall.Arguments,
+            Guid.NewGuid(),
+            null,
+            CancellationToken.None);
 
         // Assert
         executeResult.IsSuccess.Should().BeTrue();

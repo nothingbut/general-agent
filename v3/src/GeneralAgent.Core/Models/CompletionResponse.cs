@@ -24,4 +24,9 @@ public sealed record CompletionResponse
     /// 响应时间戳（必须显式设置以确保准确性）
     /// </summary>
     public required DateTime Timestamp { get; init; }
+
+    /// <summary>
+    /// LLM 返回的工具调用列表（仅在支持 Tool Calling 时有值）
+    /// </summary>
+    public IReadOnlyList<ToolCall>? ToolCalls { get; init; }
 }

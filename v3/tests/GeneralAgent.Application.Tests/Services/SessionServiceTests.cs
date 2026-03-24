@@ -3,7 +3,7 @@ using GeneralAgent.Application.Services;
 using GeneralAgent.Core.Abstractions;
 using GeneralAgent.Core.Common;
 using GeneralAgent.Core.Models;
-using Moq;
+using NSubstitute;
 
 namespace GeneralAgent.Application.Tests.Services;
 
@@ -12,13 +12,13 @@ namespace GeneralAgent.Application.Tests.Services;
 /// </summary>
 public sealed class SessionServiceTests
 {
-    private readonly Mock<ISessionRepository> _mockRepository;
+    private readonly ISessionRepository _mockRepository;
     private readonly SessionService _service;
 
     public SessionServiceTests()
     {
-        _mockRepository = new Mock<ISessionRepository>();
-        _service = new SessionService(_mockRepository.Object);
+        _mockRepository = Substitute.For<ISessionRepository>();
+        _service = new SessionService(_mockRepository);
     }
 
     #region CreateSessionAsync Tests
@@ -30,8 +30,8 @@ public sealed class SessionServiceTests
         var title = "Test Session";
         var createdSession = Session.Create(title);
         _mockRepository
-            .Setup(r => r.CreateAsync(It.IsAny<Session>(), It.IsAny<CancellationToken>()))
-            .ReturnsAsync(createdSession);
+            .CreateAsync(Arg.Any<Session>(), Arg.Any<CancellationToken>())
+            .Returns(createdSession);
 
         // Act
         var result = await _service.CreateSessionAsync(title);
@@ -42,9 +42,8 @@ public sealed class SessionServiceTests
         result.Type.Should().Be(SessionType.Normal);
         result.Status.Should().Be(SessionStatus.Active);
         result.ParentId.Should().BeNull();
-        _mockRepository.Verify(
-            r => r.CreateAsync(It.IsAny<Session>(), It.IsAny<CancellationToken>()),
-            Times.Once);
+        await _mockRepository.Received(1).CreateAsync(
+            Arg.Any<Session>(), Arg.Any<CancellationToken>());
     }
 
     [Fact]
@@ -53,8 +52,8 @@ public sealed class SessionServiceTests
         // Arrange
         var createdSession = Session.Create();
         _mockRepository
-            .Setup(r => r.CreateAsync(It.IsAny<Session>(), It.IsAny<CancellationToken>()))
-            .ReturnsAsync(createdSession);
+            .CreateAsync(Arg.Any<Session>(), Arg.Any<CancellationToken>())
+            .Returns(createdSession);
 
         // Act
         var result = await _service.CreateSessionAsync(null);
@@ -63,9 +62,8 @@ public sealed class SessionServiceTests
         result.Should().NotBeNull();
         result.Title.Should().BeNull();
         result.Type.Should().Be(SessionType.Normal);
-        _mockRepository.Verify(
-            r => r.CreateAsync(It.IsAny<Session>(), It.IsAny<CancellationToken>()),
-            Times.Once);
+        await _mockRepository.Received(1).CreateAsync(
+            Arg.Any<Session>(), Arg.Any<CancellationToken>());
     }
 
     [Fact]
@@ -76,8 +74,8 @@ public sealed class SessionServiceTests
         var title = "Subagent Session";
         var createdSession = Session.Create(title, parentId);
         _mockRepository
-            .Setup(r => r.CreateAsync(It.IsAny<Session>(), It.IsAny<CancellationToken>()))
-            .ReturnsAsync(createdSession);
+            .CreateAsync(Arg.Any<Session>(), Arg.Any<CancellationToken>())
+            .Returns(createdSession);
 
         // Act
         var result = await _service.CreateSessionAsync(title, parentId);
@@ -87,9 +85,8 @@ public sealed class SessionServiceTests
         result.Title.Should().Be(title);
         result.ParentId.Should().Be(parentId);
         result.Type.Should().Be(SessionType.Subagent);
-        _mockRepository.Verify(
-            r => r.CreateAsync(It.IsAny<Session>(), It.IsAny<CancellationToken>()),
-            Times.Once);
+        await _mockRepository.Received(1).CreateAsync(
+            Arg.Any<Session>(), Arg.Any<CancellationToken>());
     }
 
     #endregion
@@ -103,8 +100,8 @@ public sealed class SessionServiceTests
         var sessionId = Guid.NewGuid();
         var session = Session.Create("Test Session") with { Id = sessionId };
         _mockRepository
-            .Setup(r => r.GetByIdAsync(sessionId, It.IsAny<CancellationToken>()))
-            .ReturnsAsync(session);
+            .GetByIdAsync(sessionId, Arg.Any<CancellationToken>())
+            .Returns(session);
 
         // Act
         var result = await _service.GetSessionAsync(sessionId);
@@ -113,9 +110,8 @@ public sealed class SessionServiceTests
         result.Should().NotBeNull();
         result!.Id.Should().Be(sessionId);
         result.Title.Should().Be("Test Session");
-        _mockRepository.Verify(
-            r => r.GetByIdAsync(sessionId, It.IsAny<CancellationToken>()),
-            Times.Once);
+        await _mockRepository.Received(1).GetByIdAsync(
+            sessionId, Arg.Any<CancellationToken>());
     }
 
     [Fact]
@@ -124,17 +120,16 @@ public sealed class SessionServiceTests
         // Arrange
         var sessionId = Guid.NewGuid();
         _mockRepository
-            .Setup(r => r.GetByIdAsync(sessionId, It.IsAny<CancellationToken>()))
-            .ReturnsAsync((Session?)null);
+            .GetByIdAsync(sessionId, Arg.Any<CancellationToken>())
+            .Returns((Session?)null);
 
         // Act
         var result = await _service.GetSessionAsync(sessionId);
 
         // Assert
         result.Should().BeNull();
-        _mockRepository.Verify(
-            r => r.GetByIdAsync(sessionId, It.IsAny<CancellationToken>()),
-            Times.Once);
+        await _mockRepository.Received(1).GetByIdAsync(
+            sessionId, Arg.Any<CancellationToken>());
     }
 
     #endregion
@@ -151,8 +146,8 @@ public sealed class SessionServiceTests
         var pagedResult = new PagedResult<Session>(sessions, 2, 20, 0);
 
         _mockRepository
-            .Setup(r => r.ListAsync(20, 0, It.IsAny<CancellationToken>()))
-            .ReturnsAsync(pagedResult);
+            .ListAsync(20, 0, Arg.Any<CancellationToken>())
+            .Returns(pagedResult);
 
         // Act
         var result = await _service.ListSessionsAsync(limit: 20, offset: 0);
@@ -163,9 +158,7 @@ public sealed class SessionServiceTests
         result.Total.Should().Be(2);
         result.Limit.Should().Be(20);
         result.Offset.Should().Be(0);
-        _mockRepository.Verify(
-            r => r.ListAsync(20, 0, It.IsAny<CancellationToken>()),
-            Times.Once);
+        await _mockRepository.Received(1).ListAsync(20, 0, Arg.Any<CancellationToken>());
     }
 
     [Fact]
@@ -177,8 +170,8 @@ public sealed class SessionServiceTests
         var pagedResult = new PagedResult<Session>(sessions, 10, 5, 5);
 
         _mockRepository
-            .Setup(r => r.ListAsync(5, 5, It.IsAny<CancellationToken>()))
-            .ReturnsAsync(pagedResult);
+            .ListAsync(5, 5, Arg.Any<CancellationToken>())
+            .Returns(pagedResult);
 
         // Act
         var result = await _service.ListSessionsAsync(limit: 5, offset: 5);
@@ -188,9 +181,7 @@ public sealed class SessionServiceTests
         result.Items.Should().HaveCount(1);
         result.Limit.Should().Be(5);
         result.Offset.Should().Be(5);
-        _mockRepository.Verify(
-            r => r.ListAsync(5, 5, It.IsAny<CancellationToken>()),
-            Times.Once);
+        await _mockRepository.Received(1).ListAsync(5, 5, Arg.Any<CancellationToken>());
     }
 
     [Fact]
@@ -201,8 +192,8 @@ public sealed class SessionServiceTests
         var pagedResult = new PagedResult<Session>(sessions, 0, 20, 0);
 
         _mockRepository
-            .Setup(r => r.ListAsync(20, 0, It.IsAny<CancellationToken>()))
-            .ReturnsAsync(pagedResult);
+            .ListAsync(20, 0, Arg.Any<CancellationToken>())
+            .Returns(pagedResult);
 
         // Act
         var result = await _service.ListSessionsAsync();
@@ -226,10 +217,10 @@ public sealed class SessionServiceTests
         var updatedSession = originalSession.WithTitle("New Title");
 
         _mockRepository
-            .Setup(r => r.GetByIdAsync(sessionId, It.IsAny<CancellationToken>()))
-            .ReturnsAsync(originalSession);
+            .GetByIdAsync(sessionId, Arg.Any<CancellationToken>())
+            .Returns(originalSession);
         _mockRepository
-            .Setup(r => r.UpdateAsync(It.IsAny<Session>(), It.IsAny<CancellationToken>()))
+            .UpdateAsync(Arg.Any<Session>(), Arg.Any<CancellationToken>())
             .Returns(Task.CompletedTask);
 
         // Act
@@ -239,12 +230,10 @@ public sealed class SessionServiceTests
         result.Should().NotBeNull();
         result.Title.Should().Be("New Title");
         result.Id.Should().Be(sessionId);
-        _mockRepository.Verify(
-            r => r.GetByIdAsync(sessionId, It.IsAny<CancellationToken>()),
-            Times.Once);
-        _mockRepository.Verify(
-            r => r.UpdateAsync(It.IsAny<Session>(), It.IsAny<CancellationToken>()),
-            Times.Once);
+        await _mockRepository.Received(1).GetByIdAsync(
+            sessionId, Arg.Any<CancellationToken>());
+        await _mockRepository.Received(1).UpdateAsync(
+            Arg.Any<Session>(), Arg.Any<CancellationToken>());
     }
 
     [Fact]
@@ -253,8 +242,8 @@ public sealed class SessionServiceTests
         // Arrange
         var sessionId = Guid.NewGuid();
         _mockRepository
-            .Setup(r => r.GetByIdAsync(sessionId, It.IsAny<CancellationToken>()))
-            .ReturnsAsync((Session?)null);
+            .GetByIdAsync(sessionId, Arg.Any<CancellationToken>())
+            .Returns((Session?)null);
 
         // Act & Assert
         var exception = await Assert.ThrowsAsync<InvalidOperationException>(
@@ -271,10 +260,10 @@ public sealed class SessionServiceTests
         var updatedSession = originalSession.WithTitle(null);
 
         _mockRepository
-            .Setup(r => r.GetByIdAsync(sessionId, It.IsAny<CancellationToken>()))
-            .ReturnsAsync(originalSession);
+            .GetByIdAsync(sessionId, Arg.Any<CancellationToken>())
+            .Returns(originalSession);
         _mockRepository
-            .Setup(r => r.UpdateAsync(It.IsAny<Session>(), It.IsAny<CancellationToken>()))
+            .UpdateAsync(Arg.Any<Session>(), Arg.Any<CancellationToken>())
             .Returns(Task.CompletedTask);
 
         // Act
@@ -298,10 +287,10 @@ public sealed class SessionServiceTests
         var updatedSession = originalSession.WithStatus(SessionStatus.Running);
 
         _mockRepository
-            .Setup(r => r.GetByIdAsync(sessionId, It.IsAny<CancellationToken>()))
-            .ReturnsAsync(originalSession);
+            .GetByIdAsync(sessionId, Arg.Any<CancellationToken>())
+            .Returns(originalSession);
         _mockRepository
-            .Setup(r => r.UpdateAsync(It.IsAny<Session>(), It.IsAny<CancellationToken>()))
+            .UpdateAsync(Arg.Any<Session>(), Arg.Any<CancellationToken>())
             .Returns(Task.CompletedTask);
 
         // Act
@@ -311,12 +300,10 @@ public sealed class SessionServiceTests
         result.Should().NotBeNull();
         result.Status.Should().Be(SessionStatus.Running);
         result.Id.Should().Be(sessionId);
-        _mockRepository.Verify(
-            r => r.GetByIdAsync(sessionId, It.IsAny<CancellationToken>()),
-            Times.Once);
-        _mockRepository.Verify(
-            r => r.UpdateAsync(It.IsAny<Session>(), It.IsAny<CancellationToken>()),
-            Times.Once);
+        await _mockRepository.Received(1).GetByIdAsync(
+            sessionId, Arg.Any<CancellationToken>());
+        await _mockRepository.Received(1).UpdateAsync(
+            Arg.Any<Session>(), Arg.Any<CancellationToken>());
     }
 
     [Fact]
@@ -325,8 +312,8 @@ public sealed class SessionServiceTests
         // Arrange
         var sessionId = Guid.NewGuid();
         _mockRepository
-            .Setup(r => r.GetByIdAsync(sessionId, It.IsAny<CancellationToken>()))
-            .ReturnsAsync((Session?)null);
+            .GetByIdAsync(sessionId, Arg.Any<CancellationToken>())
+            .Returns((Session?)null);
 
         // Act & Assert
         var exception = await Assert.ThrowsAsync<InvalidOperationException>(
@@ -347,10 +334,10 @@ public sealed class SessionServiceTests
         var updatedSession = originalSession.WithStatus(newStatus);
 
         _mockRepository
-            .Setup(r => r.GetByIdAsync(sessionId, It.IsAny<CancellationToken>()))
-            .ReturnsAsync(originalSession);
+            .GetByIdAsync(sessionId, Arg.Any<CancellationToken>())
+            .Returns(originalSession);
         _mockRepository
-            .Setup(r => r.UpdateAsync(It.IsAny<Session>(), It.IsAny<CancellationToken>()))
+            .UpdateAsync(Arg.Any<Session>(), Arg.Any<CancellationToken>())
             .Returns(Task.CompletedTask);
 
         // Act
@@ -370,16 +357,15 @@ public sealed class SessionServiceTests
         // Arrange
         var sessionId = Guid.NewGuid();
         _mockRepository
-            .Setup(r => r.DeleteAsync(sessionId, It.IsAny<CancellationToken>()))
+            .DeleteAsync(sessionId, Arg.Any<CancellationToken>())
             .Returns(Task.CompletedTask);
 
         // Act
         await _service.DeleteSessionAsync(sessionId);
 
         // Assert
-        _mockRepository.Verify(
-            r => r.DeleteAsync(sessionId, It.IsAny<CancellationToken>()),
-            Times.Once);
+        await _mockRepository.Received(1).DeleteAsync(
+            sessionId, Arg.Any<CancellationToken>());
     }
 
     [Fact]
@@ -389,16 +375,15 @@ public sealed class SessionServiceTests
         var sessionId = Guid.NewGuid();
         var cts = new CancellationTokenSource();
         _mockRepository
-            .Setup(r => r.DeleteAsync(sessionId, It.IsAny<CancellationToken>()))
+            .DeleteAsync(sessionId, Arg.Any<CancellationToken>())
             .Returns(Task.CompletedTask);
 
         // Act
         await _service.DeleteSessionAsync(sessionId, cts.Token);
 
         // Assert
-        _mockRepository.Verify(
-            r => r.DeleteAsync(sessionId, cts.Token),
-            Times.Once);
+        await _mockRepository.Received(1).DeleteAsync(
+            sessionId, cts.Token);
     }
 
     #endregion

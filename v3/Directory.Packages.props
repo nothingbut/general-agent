@@ -15,8 +15,7 @@
     <PackageVersion Include="FluentAssertions" Version="6.12.1" />
     <PackageVersion Include="Microsoft.NET.Test.Sdk" Version="17.11.1" />
     <PackageVersion Include="coverlet.collector" Version="6.0.2" />
-    <PackageVersion Include="Moq" Version="4.20.70" />
-    <PackageVersion Include="NSubstitute" Version="5.1.0" />
+    <PackageVersion Include="NSubstitute" Version="5.3.0" />
 
     <!-- Hosting -->
     <PackageVersion Include="Microsoft.Extensions.Hosting" Version="9.0.0" />
@@ -37,6 +36,6 @@
 
     <!-- Skills System -->
     <PackageVersion Include="YamlDotNet" Version="15.3.0" />
-    <PackageVersion Include="Scriban" Version="5.9.1" />
+    <PackageVersion Include="Scriban" Version="7.0.3" />
   </ItemGroup>
 </Project>
