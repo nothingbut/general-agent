@@ -65,14 +65,14 @@ public class AgentRootCommandTests : CommandTestsBase
     }
 
     [Fact]
-    public void Create_ShouldHaveThreeSubcommands()
+    public void Create_ShouldHaveSevenSubcommands()
     {
         // Act
         var command = AgentRootCommand.Create(ServiceProvider);
 
         // Assert
         var subcommands = command.Subcommands.ToList();
-        Assert.Equal(3, subcommands.Count);
+        Assert.Equal(7, subcommands.Count); // new, list, chat, switch, delete, export, skill
     }
 
     [Fact]
