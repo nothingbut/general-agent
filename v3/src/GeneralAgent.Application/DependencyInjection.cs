@@ -33,6 +33,7 @@ public static class ApplicationDependencyInjection
         // 注册应用层服务（Scoped 生命周期）
         services.AddScoped<SessionService>();
         services.AddScoped<ConversationService>();
+        services.AddSingleton<IConfigurationService, ConfigurationService>();
 
         return services;
     }
