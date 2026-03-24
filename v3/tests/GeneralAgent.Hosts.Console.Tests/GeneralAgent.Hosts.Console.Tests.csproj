@@ -15,6 +15,7 @@
     <PackageReference Include="xunit.runner.visualstudio" />
     <PackageReference Include="NSubstitute" />
     <PackageReference Include="FluentAssertions" />
+    <PackageReference Include="Microsoft.EntityFrameworkCore.InMemory" />
   </ItemGroup>
 
   <ItemGroup>
@@ -26,6 +27,7 @@
     <ProjectReference Include="..\..\src\GeneralAgent.Hosts.Console\GeneralAgent.Hosts.Console.csproj" />
     <ProjectReference Include="..\..\src\GeneralAgent.Core\GeneralAgent.Core.csproj" />
     <ProjectReference Include="..\..\src\GeneralAgent.Application\GeneralAgent.Application.csproj" />
+    <ProjectReference Include="..\..\src\GeneralAgent.Infrastructure\GeneralAgent.Infrastructure.csproj" />
   </ItemGroup>
 
 </Project>
