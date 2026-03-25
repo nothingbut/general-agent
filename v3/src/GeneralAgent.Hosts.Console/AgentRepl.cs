@@ -1,6 +1,8 @@
 using GeneralAgent.Application.Services;
 using GeneralAgent.Core.Abstractions;
 using GeneralAgent.Core.Models;
+using GeneralAgent.Hosts.Console.Repl;
+using GeneralAgent.Hosts.Console.Services;
 using GeneralAgent.Infrastructure.LLM;
 using GeneralAgent.Infrastructure.Skills.Models;
 using Microsoft.Extensions.Logging;
@@ -21,6 +23,11 @@ public class AgentRepl
     private readonly SkillService _skillService;
     private readonly LLMOptions _llmOptions;
     private readonly ILogger<AgentRepl> _logger;
+    private readonly ReplHistoryManager _historyManager;
+    private readonly AutoCompletionHandler _completionHandler;
+    private readonly MultiLineInputHandler _multiLineHandler;
+    private readonly SearchService _searchService;
+    private readonly AliasManager _aliasManager;
 
     private Guid _currentSessionId = Guid.Empty;
     private string _currentProvider = string.Empty;
@@ -39,6 +46,30 @@ public class AgentRepl
         _skillService = skillService;
         _llmOptions = llmOptions.Value;
         _logger = logger;
+
+        // 初始化历史管理器
+        var homeDir = Environment.GetFolderPath(Environment.SpecialFolder.UserProfile);
+        var agentDir = Path.Combine(homeDir, ".agent");
+        var historyPath = Path.Combine(agentDir, "repl_history.txt");
+        var historyLogger = logger as ILogger<ReplHistoryManager>;
+        _historyManager = new ReplHistoryManager(historyPath, logger: historyLogger);
+
+        // 初始化自动补全处理器
+        var completionLogger = logger as ILogger<AutoCompletionHandler>;
+        _completionHandler = new AutoCompletionHandler(sessionService, skillService, completionLogger ?? Microsoft.Extensions.Logging.Abstractions.NullLogger<AutoCompletionHandler>.Instance);
+
+        // 初始化多行输入处理器
+        var multiLineLogger = logger as ILogger<MultiLineInputHandler>;
+        _multiLineHandler = new MultiLineInputHandler(multiLineLogger);
+
+        // 初始化搜索服务
+        var searchLogger = logger as ILogger<SearchService>;
+        _searchService = new SearchService(sessionService, messageRepository, skillService, searchLogger ?? Microsoft.Extensions.Logging.Abstractions.NullLogger<SearchService>.Instance);
+
+        // 初始化别名管理器
+        var aliasPath = Path.Combine(agentDir, "aliases.json");
+        var aliasLogger = logger as ILogger<AliasManager>;
+        _aliasManager = new AliasManager(aliasPath, aliasLogger);
     }
 
     /// <summary>
@@ -48,6 +79,20 @@ public class AgentRepl
     {
         // 初始化提供商
         _currentProvider = _llmOptions.DefaultProvider;
+
+        // 加载历史记录
+        var history = _historyManager.LoadHistory();
+        ReadLine.HistoryEnabled = true;
+        foreach (var item in history)
+        {
+            ReadLine.AddHistory(item);
+        }
+
+        _logger.LogInformation("已加载 {Count} 条历史记录", history.Count);
+
+        // 设置自动补全处理器
+        ReadLine.AutoCompletionHandler = _completionHandler;
+        _logger.LogInformation("已启用自动补全功能");
 
         // 显示欢迎信息
         DisplayWelcome();
@@ -60,21 +105,40 @@ public class AgentRepl
         {
             try
             {
-                // 显示提示符
-                var input = AnsiConsole.Prompt(
-                    new TextPrompt<string>("[bold blue]You>[/]")
-                        .AllowEmpty());
+                // 使用 ReadLine 获取初始输入（支持历史和自动补全）
+                var initialInput = ReadLine.Read("You> ");
 
                 // 处理空输入
+                if (string.IsNullOrWhiteSpace(initialInput))
+                {
+                    continue;
+                }
+
+                // 处理多行输入（如果检测到多行标记）
+                var input = _multiLineHandler.ProcessInput(initialInput, prompt => ReadLine.Read(prompt));
+
+                // 处理空输入（多行输入可能为空）
                 if (string.IsNullOrWhiteSpace(input))
                 {
                     continue;
                 }
 
-                // 处理命令
-                if (input.StartsWith('/'))
+                // 添加到历史
+                _historyManager.AddHistoryItem(initialInput); // 只添加初始输入，不添加完整多行内容
+
+                // 显示多行输入统计（如果是多行）
+                if (_multiLineHandler.IsMultiLineStart(initialInput))
                 {
-                    var shouldExit = await HandleCommandAsync(input);
+                    var stats = _multiLineHandler.GetInputStats(input);
+                    AnsiConsole.MarkupLine($"[dim]→ 已接收多行输入: {stats.Format()}[/]");
+                }
+
+                // 处理命令
+                if (initialInput.StartsWith('/'))
+                {
+                    // 解析别名
+                    var resolvedInput = _aliasManager.ResolveAlias(initialInput);
+                    var shouldExit = await HandleCommandAsync(resolvedInput);
                     if (shouldExit)
                     {
                         break;
@@ -88,11 +152,11 @@ public class AgentRepl
             catch (Exception ex)
             {
                 _logger.LogError(ex, "REPL 循环发生错误");
-                AnsiConsole.MarkupLine($"[red]错误: {ex.Message}[/]");
+                AnsiConsole.MarkupLine($"[red]✗ 错误: {ex.Message}[/]");
             }
         }
 
-        AnsiConsole.MarkupLine("\n[green]再见！[/]");
+        AnsiConsole.MarkupLine("\n[green]✓ 再见！[/]");
     }
 
     /// <summary>
@@ -103,8 +167,9 @@ public class AgentRepl
         AnsiConsole.Clear();
         var panel = new Panel(
             new Markup("[bold yellow]General Agent V3 - Console REPL[/]\n\n" +
-                      $"当前提供商: [cyan]{_currentProvider}[/]\n" +
-                      "输入 [bold]/help[/] 查看可用命令"))
+                      $"当前提供商: [cyan]{_currentProvider}[/]\n\n" +
+                      "输入 [bold]/help[/] 查看可用命令\n" +
+                      "[dim]快捷键: ↑↓ 浏览历史 | Tab 自动补全 | Ctrl+C 取消输入[/]"))
         {
             Border = BoxBorder.Double,
             Padding = new Padding(2, 1)
@@ -180,9 +245,17 @@ public class AgentRepl
                 DisplayWelcome();
                 return false;
 
+            case "search":
+                await SearchAsync(args);
+                return false;
+
+            case "alias":
+                HandleAliasCommand(args);
+                return false;
+
             default:
-                AnsiConsole.MarkupLine($"[red]未知命令: {command}[/]");
-                AnsiConsole.MarkupLine($"[dim]提示: 输入 /help 查看可用命令[/]");
+                AnsiConsole.MarkupLine($"[red]✗ 未知命令: {command}[/]");
+                AnsiConsole.MarkupLine($"[dim]💡 提示: 输入 /help 查看可用命令[/]");
                 return false;
         }
     }
@@ -194,7 +267,8 @@ public class AgentRepl
     {
         if (_currentSessionId == Guid.Empty)
         {
-            AnsiConsole.MarkupLine("[red]错误: 没有活动会话，请先使用 /new 创建会话[/]");
+            AnsiConsole.MarkupLine("[red]✗ 错误: 没有活动会话[/]");
+            AnsiConsole.MarkupLine("[dim]💡 提示: 使用 /new 创建新会话[/]");
             return;
         }
 
@@ -214,7 +288,7 @@ public class AgentRepl
         catch (Exception ex)
         {
             _logger.LogError(ex, "对话处理失败");
-            AnsiConsole.MarkupLine($"\n[red]错误: {ex.Message}[/]");
+            AnsiConsole.MarkupLine($"\n[red]✗ 错误: {ex.Message}[/]");
         }
     }
 
@@ -248,6 +322,19 @@ public class AgentRepl
         table.AddRow("[cyan]/switch <provider>[/]", "切换 LLM 提供商");
         table.AddRow("[cyan]/provider[/]", "显示当前提供商");
 
+        // 搜索
+        table.AddRow("", "");
+        table.AddRow("[bold yellow]搜索[/]", "");
+        table.AddRow("[cyan]/search <关键词>[/]", "搜索会话");
+        table.AddRow("[cyan]/search <关键词> --type skill[/]", "搜索技能");
+
+        // 别名
+        table.AddRow("", "");
+        table.AddRow("[bold yellow]别名[/]", "");
+        table.AddRow("[cyan]/alias[/]", "列出所有别名");
+        table.AddRow("[cyan]/alias add <别名> <命令>[/]", "添加别名");
+        table.AddRow("[cyan]/alias remove <别名>[/]", "移除别名");
+
         // 其他
         table.AddRow("", "");
         table.AddRow("[bold yellow]其他[/]", "");
@@ -256,6 +343,21 @@ public class AgentRepl
         table.AddRow("[cyan]/exit[/]", "退出 REPL");
 
         AnsiConsole.Write(table);
+        AnsiConsole.WriteLine();
+
+        // 添加快捷键说明
+        var shortcutPanel = new Panel(
+            new Markup("[bold]常用快捷键：[/]\n" +
+                      "[cyan]↑/↓[/] - 浏览命令历史\n" +
+                      "[cyan]Tab[/] - 自动补全命令和会话 ID\n" +
+                      "[cyan]Ctrl+C[/] - 取消当前输入\n" +
+                      "[cyan]Ctrl+L[/] - 清屏（或使用 /clear）\n" +
+                      "[cyan]>>>[/] - 开始多行输入（以单独的 >>> 结束）"))
+        {
+            Header = new PanelHeader("[yellow]快捷键[/]"),
+            Border = BoxBorder.Rounded
+        };
+        AnsiConsole.Write(shortcutPanel);
     }
 
     /// <summary>
@@ -278,12 +380,13 @@ public class AgentRepl
             var defaultTitle = string.IsNullOrWhiteSpace(title) ? "新会话" : title;
             var session = await _sessionService.CreateSessionAsync(defaultTitle);
             _currentSessionId = session.Id;
-            AnsiConsole.MarkupLine($"[green]已创建新会话: {session.Title} (ID: {session.Id})[/]");
+            AnsiConsole.MarkupLine($"[green]✓ 已创建新会话: {session.Title}[/]");
+            AnsiConsole.MarkupLine($"  [dim]ID: {session.Id.ToString()[..8]}...[/]");
         }
         catch (Exception ex)
         {
             _logger.LogError(ex, "创建会话失败");
-            AnsiConsole.MarkupLine($"[red]创建会话失败: {ex.Message}[/]");
+            AnsiConsole.MarkupLine($"[red]✗ 创建会话失败: {ex.Message}[/]");
         }
     }
 
@@ -298,7 +401,7 @@ public class AgentRepl
 
             if (pagedResult.Total == 0)
             {
-                AnsiConsole.MarkupLine("[yellow]没有会话[/]");
+                AnsiConsole.MarkupLine("[yellow]⚠ 没有会话[/]");
                 return;
             }
 
@@ -326,7 +429,7 @@ public class AgentRepl
         catch (Exception ex)
         {
             _logger.LogError(ex, "列出会话失败");
-            AnsiConsole.MarkupLine($"[red]列出会话失败: {ex.Message}[/]");
+            AnsiConsole.MarkupLine($"[red]✗ 列出会话失败: {ex.Message}[/]");
         }
     }
 
@@ -337,7 +440,7 @@ public class AgentRepl
     {
         if (args.Length == 0)
         {
-            AnsiConsole.MarkupLine("[red]用法: /switch <provider>[/]");
+            AnsiConsole.MarkupLine("[red]✗ 用法: /switch <provider>[/]");
             ShowCurrentProvider();
             return;
         }
@@ -347,13 +450,13 @@ public class AgentRepl
         // 验证提供商是否存在
         if (!_llmOptions.Providers.ContainsKey(providerName))
         {
-            AnsiConsole.MarkupLine($"[red]未知提供商: {providerName}[/]");
+            AnsiConsole.MarkupLine($"[red]✗ 未知提供商: {providerName}[/]");
             ShowCurrentProvider();
             return;
         }
 
         _currentProvider = providerName;
-        AnsiConsole.MarkupLine($"[green]已切换到提供商: {_currentProvider}[/]");
+        AnsiConsole.MarkupLine($"[green]✓ 已切换到提供商: {_currentProvider}[/]");
 
         await Task.CompletedTask;
     }
@@ -365,7 +468,8 @@ public class AgentRepl
     {
         if (_currentSessionId == Guid.Empty)
         {
-            AnsiConsole.MarkupLine("[red]没有活动会话[/]");
+            AnsiConsole.MarkupLine("[red]✗ 没有活动会话[/]");
+            AnsiConsole.MarkupLine("[dim]💡 提示: 使用 /new 创建新会话[/]");
             return;
         }
 
@@ -375,7 +479,7 @@ public class AgentRepl
 
             if (messages.Count == 0)
             {
-                AnsiConsole.MarkupLine("[yellow]会话历史为空[/]");
+                AnsiConsole.MarkupLine("[yellow]⚠ 会话历史为空[/]");
                 return;
             }
 
@@ -407,7 +511,7 @@ public class AgentRepl
         catch (Exception ex)
         {
             _logger.LogError(ex, "获取会话历史失败");
-            AnsiConsole.MarkupLine($"[red]获取会话历史失败: {ex.Message}[/]");
+            AnsiConsole.MarkupLine($"[red]✗ 获取会话历史失败: {ex.Message}[/]");
         }
     }
 
@@ -418,8 +522,8 @@ public class AgentRepl
     {
         if (args.Length == 0)
         {
-            AnsiConsole.MarkupLine("[red]用法: /session <session-id>[/]");
-            AnsiConsole.MarkupLine("[dim]提示: 使用 /list 查看所有会话[/]");
+            AnsiConsole.MarkupLine("[red]✗ 用法: /session <session-id>[/]");
+            AnsiConsole.MarkupLine("[dim]💡 提示: 使用 /list 查看所有会话[/]");
             return;
         }
 
@@ -443,13 +547,13 @@ public class AgentRepl
 
                 if (matchingSessions.Count == 0)
                 {
-                    AnsiConsole.MarkupLine($"[red]未找到会话: {sessionIdStr}[/]");
+                    AnsiConsole.MarkupLine($"[red]✗ 未找到会话: {sessionIdStr}[/]");
                     return;
                 }
 
                 if (matchingSessions.Count > 1)
                 {
-                    AnsiConsole.MarkupLine($"[yellow]找到多个匹配的会话，请使用更长的 ID：[/]");
+                    AnsiConsole.MarkupLine($"[yellow]⚠ 找到多个匹配的会话，请使用更长的 ID：[/]");
                     foreach (var s in matchingSessions)
                     {
                         AnsiConsole.MarkupLine($"  - [cyan]{s.Id.ToString()[..8]}...[/] {s.Title}");
@@ -464,7 +568,7 @@ public class AgentRepl
             var session = await _sessionService.GetSessionAsync(sessionId);
             if (session == null)
             {
-                AnsiConsole.MarkupLine($"[red]会话不存在: {sessionId}[/]");
+                AnsiConsole.MarkupLine($"[red]✗ 会话不存在: {sessionId}[/]");
                 return;
             }
 
@@ -477,7 +581,7 @@ public class AgentRepl
         catch (Exception ex)
         {
             _logger.LogError(ex, "切换会话失败");
-            AnsiConsole.MarkupLine($"[red]切换会话失败: {ex.Message}[/]");
+            AnsiConsole.MarkupLine($"[red]✗ 切换会话失败: {ex.Message}[/]");
         }
     }
 
@@ -495,7 +599,8 @@ public class AgentRepl
             {
                 if (_currentSessionId == Guid.Empty)
                 {
-                    AnsiConsole.MarkupLine("[red]没有活动会话[/]");
+                    AnsiConsole.MarkupLine("[red]✗ 没有活动会话[/]");
+            AnsiConsole.MarkupLine("[dim]💡 提示: 使用 /new 创建新会话[/]");
                     return;
                 }
                 sessionId = _currentSessionId;
@@ -519,7 +624,7 @@ public class AgentRepl
 
                     if (matchingSessions.Count == 0)
                     {
-                        AnsiConsole.MarkupLine($"[red]未找到会话: {sessionIdStr}[/]");
+                        AnsiConsole.MarkupLine($"[red]✗ 未找到会话: {sessionIdStr}[/]");
                         return;
                     }
 
@@ -537,7 +642,7 @@ public class AgentRepl
             var session = await _sessionService.GetSessionAsync(sessionId);
             if (session == null)
             {
-                AnsiConsole.MarkupLine($"[red]会话不存在: {sessionId}[/]");
+                AnsiConsole.MarkupLine($"[red]✗ 会话不存在: {sessionId}[/]");
                 return;
             }
 
@@ -548,7 +653,7 @@ public class AgentRepl
 
             if (!confirm)
             {
-                AnsiConsole.MarkupLine("[yellow]已取消删除[/]");
+                AnsiConsole.MarkupLine("[yellow]⚠ 已取消删除[/]");
                 return;
             }
 
@@ -560,13 +665,14 @@ public class AgentRepl
             if (sessionId == _currentSessionId)
             {
                 _currentSessionId = Guid.Empty;
-                AnsiConsole.MarkupLine("[yellow]当前会话已清除，请使用 /new 创建新会话或 /session 切换到其他会话[/]");
+                AnsiConsole.MarkupLine("[yellow]⚠ 当前会话已清除[/]");
+                AnsiConsole.MarkupLine("[dim]💡 提示: 使用 /new 创建新会话或 /session 切换到其他会话[/]");
             }
         }
         catch (Exception ex)
         {
             _logger.LogError(ex, "删除会话失败");
-            AnsiConsole.MarkupLine($"[red]删除会话失败: {ex.Message}[/]");
+            AnsiConsole.MarkupLine($"[red]✗ 删除会话失败: {ex.Message}[/]");
         }
     }
 
@@ -587,7 +693,7 @@ public class AgentRepl
 
                 if (skills.Count == 0)
                 {
-                    AnsiConsole.MarkupLine($"[yellow]命名空间 '{namespaceName}' 中没有技能[/]");
+                    AnsiConsole.MarkupLine($"[yellow]⚠ 命名空间 '{namespaceName}' 中没有技能[/]");
                     return;
                 }
             }
@@ -597,7 +703,7 @@ public class AgentRepl
 
                 if (skills.Count == 0)
                 {
-                    AnsiConsole.MarkupLine("[yellow]没有加载任何技能[/]");
+                    AnsiConsole.MarkupLine("[yellow]⚠ 没有加载任何技能[/]");
                     return;
                 }
             }
@@ -636,12 +742,12 @@ public class AgentRepl
 
             AnsiConsole.MarkupLine($"[bold]已加载 {skills.Count} 个技能：[/]");
             AnsiConsole.Write(table);
-            AnsiConsole.MarkupLine("\n[dim]提示: 使用 /skill <name> 查看技能详情[/]");
+            AnsiConsole.MarkupLine("\n[dim]💡 提示: 使用 /skill <name> 查看技能详情[/]");
         }
         catch (Exception ex)
         {
             _logger.LogError(ex, "显示技能列表失败");
-            AnsiConsole.MarkupLine($"[red]显示技能列表失败: {ex.Message}[/]");
+            AnsiConsole.MarkupLine($"[red]✗ 显示技能列表失败: {ex.Message}[/]");
         }
     }
 
@@ -652,7 +758,7 @@ public class AgentRepl
     {
         if (args.Length == 0)
         {
-            AnsiConsole.MarkupLine("[red]用法: /skill <skill-name>[/]");
+            AnsiConsole.MarkupLine("[red]✗ 用法: /skill <skill-name>[/]");
             AnsiConsole.MarkupLine("[dim]示例: /skill personal:greeting[/]");
             return;
         }
@@ -668,8 +774,8 @@ public class AgentRepl
 
             if (skill == null)
             {
-                AnsiConsole.MarkupLine($"[red]未找到技能: {skillName}[/]");
-                AnsiConsole.MarkupLine("[dim]提示: 使用 /skills 查看所有可用技能[/]");
+                AnsiConsole.MarkupLine($"[red]✗ 未找到技能: {skillName}[/]");
+                AnsiConsole.MarkupLine("[dim]💡 提示: 使用 /skills 查看所有可用技能[/]");
                 return;
             }
 
@@ -731,13 +837,189 @@ public class AgentRepl
             else
             {
                 AnsiConsole.WriteLine();
-                AnsiConsole.MarkupLine("[dim]提示: 使用 /skill <name> --template 查看提示词模板[/]");
+                AnsiConsole.MarkupLine("[dim]💡 提示: 使用 /skill <name> --template 查看提示词模板[/]");
             }
         }
         catch (Exception ex)
         {
             _logger.LogError(ex, "显示技能详情失败");
-            AnsiConsole.MarkupLine($"[red]显示技能详情失败: {ex.Message}[/]");
+            AnsiConsole.MarkupLine($"[red]✗ 显示技能详情失败: {ex.Message}[/]");
+        }
+    }
+
+    /// <summary>
+    /// 搜索功能
+    /// </summary>
+    private async Task SearchAsync(string[] args)
+    {
+        if (args.Length == 0)
+        {
+            AnsiConsole.MarkupLine("[red]✗ 用法: /search <关键词> [--type session|message|skill][/]");
+            AnsiConsole.MarkupLine("[dim]示例: /search hello --type session[/]");
+            return;
+        }
+
+        var query = args[0];
+        var type = "session";
+        var limit = 10;
+
+        // 解析参数
+        for (int i = 1; i < args.Length; i++)
+        {
+            if (args[i] == "--type" || args[i] == "-t")
+            {
+                if (i + 1 < args.Length)
+                    type = args[++i];
+            }
+            else if (args[i] == "--limit" || args[i] == "-l")
+            {
+                if (i + 1 < args.Length && int.TryParse(args[++i], out var l))
+                    limit = l;
+            }
+        }
+
+        try
+        {
+            switch (type.ToLower())
+            {
+                case "session":
+                    var sessions = await _searchService.SearchSessionsAsync(query, limit);
+                    if (sessions.Total == 0)
+                    {
+                        AnsiConsole.MarkupLine("[yellow]⚠ 未找到匹配的会话[/]");
+                        return;
+                    }
+                    
+                    var table = new Table().Border(TableBorder.Rounded)
+                        .AddColumn("ID").AddColumn("标题").AddColumn("创建时间");
+                    
+                    foreach (var s in sessions.Items)
+                        table.AddRow($"[cyan]{s.Id.ToString()[..8]}...[/]", s.Title ?? "无", s.CreatedAt.ToString("yyyy-MM-dd HH:mm"));
+                    
+                    AnsiConsole.Write(table);
+                    AnsiConsole.MarkupLine($"\n[dim]找到 {sessions.Total} 个会话[/]");
+                    break;
+
+                case "skill":
+                    var skills = _searchService.SearchSkills(query);
+                    if (skills.Count == 0)
+                    {
+                        AnsiConsole.MarkupLine("[yellow]⚠ 未找到匹配的技能[/]");
+                        return;
+                    }
+                    
+                    var skillTable = new Table().Border(TableBorder.Rounded)
+                        .AddColumn("名称").AddColumn("描述");
+                    
+                    foreach (var sk in skills.Take(limit))
+                        skillTable.AddRow($"[cyan]{sk.FullName}[/]", sk.Description);
+                    
+                    AnsiConsole.Write(skillTable);
+                    AnsiConsole.MarkupLine($"\n[dim]找到 {skills.Count} 个技能[/]");
+                    break;
+
+                default:
+                    AnsiConsole.MarkupLine($"[red]✗ 未知类型: {type}[/]");
+                    break;
+            }
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "搜索失败");
+            AnsiConsole.MarkupLine($"[red]✗ 搜索失败: {ex.Message}[/]");
+        }
+    }
+
+    /// <summary>
+    /// 处理别名命令
+    /// </summary>
+    private void HandleAliasCommand(string[] args)
+    {
+        if (args.Length == 0)
+        {
+            // 显示所有别名
+            var aliases = _aliasManager.GetAllAliases();
+            if (aliases.Count == 0)
+            {
+                AnsiConsole.MarkupLine("[yellow]⚠ 没有配置任何别名[/]");
+                return;
+            }
+
+            var table = new Table()
+                .Border(TableBorder.Rounded)
+                .AddColumn("别名")
+                .AddColumn("命令");
+
+            foreach (var (alias, command) in aliases.OrderBy(x => x.Key))
+            {
+                table.AddRow($"[cyan]{alias}[/]", command);
+            }
+
+            AnsiConsole.MarkupLine($"[bold]已配置 {aliases.Count} 个别名：[/]");
+            AnsiConsole.Write(table);
+            AnsiConsole.MarkupLine("\n[dim]💡 提示: 使用 /alias add <别名> <命令> 添加新别名[/]");
+            return;
+        }
+
+        var subCommand = args[0].ToLower();
+
+        try
+        {
+            switch (subCommand)
+            {
+                case "list":
+                    // 递归调用自己显示列表
+                    HandleAliasCommand(Array.Empty<string>());
+                    break;
+
+                case "add":
+                    if (args.Length < 3)
+                    {
+                        AnsiConsole.MarkupLine("[red]✗ 用法: /alias add <别名> <命令>[/]");
+                        AnsiConsole.MarkupLine("[dim]示例: /alias add n new[/]");
+                        return;
+                    }
+
+                    var newAlias = args[1];
+                    var newCommand = args[2];
+
+                    _aliasManager.AddAlias(newAlias, newCommand);
+                    _aliasManager.SaveAliases();
+                    AnsiConsole.MarkupLine($"[green]✓ 已添加别名: {newAlias} -> {newCommand}[/]");
+                    break;
+
+                case "remove":
+                case "delete":
+                case "rm":
+                    if (args.Length < 2)
+                    {
+                        AnsiConsole.MarkupLine("[red]✗ 用法: /alias remove <别名>[/]");
+                        AnsiConsole.MarkupLine("[dim]示例: /alias remove n[/]");
+                        return;
+                    }
+
+                    var aliasToRemove = args[1];
+                    if (_aliasManager.RemoveAlias(aliasToRemove))
+                    {
+                        _aliasManager.SaveAliases();
+                        AnsiConsole.MarkupLine($"[green]✓ 已移除别名: {aliasToRemove}[/]");
+                    }
+                    else
+                    {
+                        AnsiConsole.MarkupLine($"[yellow]⚠ 别名不存在: {aliasToRemove}[/]");
+                    }
+                    break;
+
+                default:
+                    AnsiConsole.MarkupLine($"[red]✗ 未知子命令: {subCommand}[/]");
+                    AnsiConsole.MarkupLine("[dim]💡 提示: 可用命令: list, add, remove[/]");
+                    break;
+            }
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "处理别名命令失败");
+            AnsiConsole.MarkupLine($"[red]✗ 错误: {ex.Message}[/]");
         }
     }
 }
