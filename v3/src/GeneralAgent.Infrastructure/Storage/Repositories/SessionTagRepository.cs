@@ -114,6 +114,22 @@ public sealed class SessionTagRepository : ISessionTagRepository
         }
     }
 
+    public async Task<Dictionary<string, int>> GetTagStatisticsAsync(CancellationToken ct = default)
+    {
+        try
+        {
+            return await _context.Set<SessionTag>()
+                .AsNoTracking()
+                .GroupBy(t => t.Tag)
+                .Select(g => new { Tag = g.Key, Count = g.Count() })
+                .ToDictionaryAsync(x => x.Tag, x => x.Count, ct);
+        }
+        catch (Exception ex)
+        {
+            throw new StorageException($"Failed to get tag statistics: {ex.Message}", ex);
+        }
+    }
+
     public async Task RemoveBySessionAsync(Guid sessionId, CancellationToken ct = default)
     {
         try

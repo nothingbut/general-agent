@@ -180,6 +180,36 @@ public class SessionTagRepositoryTests : IDisposable
     }
 
     [Fact]
+    public async Task GetTagStatisticsAsync_ShouldReturnTagCounts()
+    {
+        // Arrange
+        var session1 = Guid.NewGuid();
+        var session2 = Guid.NewGuid();
+        var session3 = Guid.NewGuid();
+
+        // "python" 标签在 2 个会话中使用
+        await _repository.AddAsync(SessionTag.Create(session1, "python"));
+        await _repository.AddAsync(SessionTag.Create(session2, "python"));
+
+        // "bug" 标签在 3 个会话中使用
+        await _repository.AddAsync(SessionTag.Create(session1, "bug"));
+        await _repository.AddAsync(SessionTag.Create(session2, "bug"));
+        await _repository.AddAsync(SessionTag.Create(session3, "bug"));
+
+        // "feature" 标签在 1 个会话中使用
+        await _repository.AddAsync(SessionTag.Create(session3, "feature"));
+
+        // Act
+        var statistics = await _repository.GetTagStatisticsAsync();
+
+        // Assert
+        statistics.Should().HaveCount(3);
+        statistics["python"].Should().Be(2);
+        statistics["bug"].Should().Be(3);
+        statistics["feature"].Should().Be(1);
+    }
+
+    [Fact]
     public async Task RemoveBySessionAsync_ShouldDeleteAllSessionTags()
     {
         // Arrange

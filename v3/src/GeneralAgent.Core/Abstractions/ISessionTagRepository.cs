@@ -34,6 +34,11 @@ public interface ISessionTagRepository
     Task<List<string>> GetAllTagsAsync(CancellationToken ct = default);
 
     /// <summary>
+    /// 获取所有标签及其使用次数（按会话数统计）
+    /// </summary>
+    Task<Dictionary<string, int>> GetTagStatisticsAsync(CancellationToken ct = default);
+
+    /// <summary>
     /// 删除会话的所有标签
     /// </summary>
     Task RemoveBySessionAsync(Guid sessionId, CancellationToken ct = default);
