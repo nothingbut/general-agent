@@ -1,7 +1,8 @@
 using GeneralAgent.Application.Services;
 using GeneralAgent.Core.Abstractions;
 using GeneralAgent.Core.Models;
-using GeneralAgent.Hosts.Console.Repl;
+// using GeneralAgent.Hosts.Console.Repl; // TODO: Phase 5/6 - not implemented yet
+using GeneralAgent.Hosts.Console.Commands;
 using GeneralAgent.Hosts.Console.Services;
 using GeneralAgent.Infrastructure.LLM;
 using GeneralAgent.Infrastructure.Skills.Models;
@@ -21,13 +22,15 @@ public class AgentRepl
     private readonly ConversationService _conversationService;
     private readonly IMessageRepository _messageRepository;
     private readonly SkillService _skillService;
+    private readonly SearchCommand _searchCommand;
+    private readonly TagCommand _tagCommand;
     private readonly LLMOptions _llmOptions;
     private readonly ILogger<AgentRepl> _logger;
-    private readonly ReplHistoryManager _historyManager;
-    private readonly AutoCompletionHandler _completionHandler;
-    private readonly MultiLineInputHandler _multiLineHandler;
-    private readonly SearchService _searchService;
-    private readonly AliasManager _aliasManager;
+    // TODO: Phase 5/6 - not implemented yet
+    // private readonly ReplHistoryManager _historyManager;
+    // private readonly AutoCompletionHandler _completionHandler;
+    // private readonly MultiLineInputHandler _multiLineHandler;
+    // private readonly AliasManager _aliasManager;
 
     private Guid _currentSessionId = Guid.Empty;
     private string _currentProvider = string.Empty;
@@ -37,6 +40,8 @@ public class AgentRepl
         ConversationService conversationService,
         IMessageRepository messageRepository,
         SkillService skillService,
+        SearchCommand searchCommand,
+        TagCommand tagCommand,
         IOptions<LLMOptions> llmOptions,
         ILogger<AgentRepl> logger)
     {
@@ -44,32 +49,35 @@ public class AgentRepl
         _conversationService = conversationService;
         _messageRepository = messageRepository;
         _skillService = skillService;
+        _searchCommand = searchCommand;
+        _tagCommand = tagCommand;
         _llmOptions = llmOptions.Value;
         _logger = logger;
 
-        // 初始化历史管理器
-        var homeDir = Environment.GetFolderPath(Environment.SpecialFolder.UserProfile);
-        var agentDir = Path.Combine(homeDir, ".agent");
-        var historyPath = Path.Combine(agentDir, "repl_history.txt");
-        var historyLogger = logger as ILogger<ReplHistoryManager>;
-        _historyManager = new ReplHistoryManager(historyPath, logger: historyLogger);
+        // TODO: Phase 5/6 - not implemented yet
+        // // 初始化历史管理器
+        // var homeDir = Environment.GetFolderPath(Environment.SpecialFolder.UserProfile);
+        // var agentDir = Path.Combine(homeDir, ".agent");
+        // var historyPath = Path.Combine(agentDir, "repl_history.txt");
+        // var historyLogger = logger as ILogger<ReplHistoryManager>;
+        // _historyManager = new ReplHistoryManager(historyPath, logger: historyLogger);
 
-        // 初始化自动补全处理器
-        var completionLogger = logger as ILogger<AutoCompletionHandler>;
-        _completionHandler = new AutoCompletionHandler(sessionService, skillService, completionLogger ?? Microsoft.Extensions.Logging.Abstractions.NullLogger<AutoCompletionHandler>.Instance);
+        // // 初始化自动补全处理器
+        // var completionLogger = logger as ILogger<AutoCompletionHandler>;
+        // _completionHandler = new AutoCompletionHandler(sessionService, skillService, completionLogger ?? Microsoft.Extensions.Logging.Abstractions.NullLogger<AutoCompletionHandler>.Instance);
 
-        // 初始化多行输入处理器
-        var multiLineLogger = logger as ILogger<MultiLineInputHandler>;
-        _multiLineHandler = new MultiLineInputHandler(multiLineLogger);
+        // // 初始化多行输入处理器
+        // var multiLineLogger = logger as ILogger<MultiLineInputHandler>;
+        // _multiLineHandler = new MultiLineInputHandler(multiLineLogger);
 
-        // 初始化搜索服务
-        var searchLogger = logger as ILogger<SearchService>;
-        _searchService = new SearchService(sessionService, messageRepository, skillService, searchLogger ?? Microsoft.Extensions.Logging.Abstractions.NullLogger<SearchService>.Instance);
+        // // 初始化搜索服务
+        // var searchLogger = logger as ILogger<SearchService>;
+        // _searchService = new SearchService(sessionService, messageRepository, skillService, searchLogger ?? Microsoft.Extensions.Logging.Abstractions.NullLogger<SearchService>.Instance);
 
-        // 初始化别名管理器
-        var aliasPath = Path.Combine(agentDir, "aliases.json");
-        var aliasLogger = logger as ILogger<AliasManager>;
-        _aliasManager = new AliasManager(aliasPath, aliasLogger);
+        // // 初始化别名管理器
+        // var aliasPath = Path.Combine(agentDir, "aliases.json");
+        // var aliasLogger = logger as ILogger<AliasManager>;
+        // _aliasManager = new AliasManager(aliasPath, aliasLogger);
     }
 
     /// <summary>
@@ -80,19 +88,20 @@ public class AgentRepl
         // 初始化提供商
         _currentProvider = _llmOptions.DefaultProvider;
 
-        // 加载历史记录
-        var history = _historyManager.LoadHistory();
-        ReadLine.HistoryEnabled = true;
-        foreach (var item in history)
-        {
-            ReadLine.AddHistory(item);
-        }
+        // TODO: Phase 5/6 - not implemented yet
+        // // 加载历史记录
+        // var history = _historyManager.LoadHistory();
+        // ReadLine.HistoryEnabled = true;
+        // foreach (var item in history)
+        // {
+        //     ReadLine.AddHistory(item);
+        // }
 
-        _logger.LogInformation("已加载 {Count} 条历史记录", history.Count);
+        // _logger.LogInformation("已加载 {Count} 条历史记录", history.Count);
 
-        // 设置自动补全处理器
-        ReadLine.AutoCompletionHandler = _completionHandler;
-        _logger.LogInformation("已启用自动补全功能");
+        // // 设置自动补全处理器
+        // ReadLine.AutoCompletionHandler = _completionHandler;
+        // _logger.LogInformation("已启用自动补全功能");
 
         // 显示欢迎信息
         DisplayWelcome();
@@ -114,8 +123,11 @@ public class AgentRepl
                     continue;
                 }
 
-                // 处理多行输入（如果检测到多行标记）
-                var input = _multiLineHandler.ProcessInput(initialInput, prompt => ReadLine.Read(prompt));
+                // TODO: Phase 5/6 - not implemented yet
+                // // 处理多行输入（如果检测到多行标记）
+                // var input = _multiLineHandler.ProcessInput(initialInput, prompt => ReadLine.Read(prompt));
+
+                var input = initialInput; // Simple fallback for now
 
                 // 处理空输入（多行输入可能为空）
                 if (string.IsNullOrWhiteSpace(input))
@@ -123,21 +135,24 @@ public class AgentRepl
                     continue;
                 }
 
-                // 添加到历史
-                _historyManager.AddHistoryItem(initialInput); // 只添加初始输入，不添加完整多行内容
+                // TODO: Phase 5/6 - not implemented yet
+                // // 添加到历史
+                // _historyManager.AddHistoryItem(initialInput); // 只添加初始输入，不添加完整多行内容
 
-                // 显示多行输入统计（如果是多行）
-                if (_multiLineHandler.IsMultiLineStart(initialInput))
-                {
-                    var stats = _multiLineHandler.GetInputStats(input);
-                    AnsiConsole.MarkupLine($"[dim]→ 已接收多行输入: {stats.Format()}[/]");
-                }
+                // // 显示多行输入统计（如果是多行）
+                // if (_multiLineHandler.IsMultiLineStart(initialInput))
+                // {
+                //     var stats = _multiLineHandler.GetInputStats(input);
+                //     AnsiConsole.MarkupLine($"[dim]→ 已接收多行输入: {stats.Format()}[/]");
+                // }
 
                 // 处理命令
                 if (initialInput.StartsWith('/'))
                 {
-                    // 解析别名
-                    var resolvedInput = _aliasManager.ResolveAlias(initialInput);
+                    // TODO: Phase 5/6 - not implemented yet
+                    // // 解析别名
+                    // var resolvedInput = _aliasManager.ResolveAlias(initialInput);
+                    var resolvedInput = initialInput; // Simple fallback for now
                     var shouldExit = await HandleCommandAsync(resolvedInput);
                     if (shouldExit)
                     {
@@ -249,8 +264,14 @@ public class AgentRepl
                 await SearchAsync(args);
                 return false;
 
+            case "tag":
+                await HandleTagCommandAsync(args);
+                return false;
+
             case "alias":
-                HandleAliasCommand(args);
+                // TODO: Phase 5/6 - not implemented yet
+                AnsiConsole.MarkupLine("[yellow]⚠ 别名功能尚未实现[/]");
+                // HandleAliasCommand(args);
                 return false;
 
             default:
@@ -324,9 +345,17 @@ public class AgentRepl
 
         // 搜索
         table.AddRow("", "");
-        table.AddRow("[bold yellow]搜索[/]", "");
-        table.AddRow("[cyan]/search <关键词>[/]", "搜索会话");
-        table.AddRow("[cyan]/search <关键词> --type skill[/]", "搜索技能");
+        table.AddRow("[bold yellow]搜索功能[/] [green](V3.1 新增)[/]", "");
+        table.AddRow("[cyan]/search <查询>[/]", "使用自然语言搜索消息内容");
+
+        // 标签管理
+        table.AddRow("", "");
+        table.AddRow("[bold yellow]标签管理[/] [green](V3.1 新增)[/]", "");
+        table.AddRow("[cyan]/tag add <标签> [[--emoji 🐍]] [[--color #FF0000]][/]", "为当前会话添加标签");
+        table.AddRow("[cyan]/tag remove <标签>[/]", "从当前会话移除标签");
+        table.AddRow("[cyan]/tag list[/]", "列出当前会话的标签");
+        table.AddRow("[cyan]/tag list --all[/]", "列出所有标签及使用统计");
+        table.AddRow("[cyan]/tag suggest[/]", "基于会话标题生成智能标签建议");
 
         // 别名
         table.AddRow("", "");
@@ -854,74 +883,16 @@ public class AgentRepl
     {
         if (args.Length == 0)
         {
-            AnsiConsole.MarkupLine("[red]✗ 用法: /search <关键词> [--type session|message|skill][/]");
-            AnsiConsole.MarkupLine("[dim]示例: /search hello --type session[/]");
+            AnsiConsole.MarkupLine("[red]✗ 用法: /search <查询>[/]");
+            AnsiConsole.MarkupLine("[dim]示例: /search 查找昨天关于 Python 的讨论[/]");
             return;
         }
 
-        var query = args[0];
-        var type = "session";
-        var limit = 10;
-
-        // 解析参数
-        for (int i = 1; i < args.Length; i++)
-        {
-            if (args[i] == "--type" || args[i] == "-t")
-            {
-                if (i + 1 < args.Length)
-                    type = args[++i];
-            }
-            else if (args[i] == "--limit" || args[i] == "-l")
-            {
-                if (i + 1 < args.Length && int.TryParse(args[++i], out var l))
-                    limit = l;
-            }
-        }
+        var query = string.Join(' ', args);
 
         try
         {
-            switch (type.ToLower())
-            {
-                case "session":
-                    var sessions = await _searchService.SearchSessionsAsync(query, limit);
-                    if (sessions.Total == 0)
-                    {
-                        AnsiConsole.MarkupLine("[yellow]⚠ 未找到匹配的会话[/]");
-                        return;
-                    }
-                    
-                    var table = new Table().Border(TableBorder.Rounded)
-                        .AddColumn("ID").AddColumn("标题").AddColumn("创建时间");
-                    
-                    foreach (var s in sessions.Items)
-                        table.AddRow($"[cyan]{s.Id.ToString()[..8]}...[/]", s.Title ?? "无", s.CreatedAt.ToString("yyyy-MM-dd HH:mm"));
-                    
-                    AnsiConsole.Write(table);
-                    AnsiConsole.MarkupLine($"\n[dim]找到 {sessions.Total} 个会话[/]");
-                    break;
-
-                case "skill":
-                    var skills = _searchService.SearchSkills(query);
-                    if (skills.Count == 0)
-                    {
-                        AnsiConsole.MarkupLine("[yellow]⚠ 未找到匹配的技能[/]");
-                        return;
-                    }
-                    
-                    var skillTable = new Table().Border(TableBorder.Rounded)
-                        .AddColumn("名称").AddColumn("描述");
-                    
-                    foreach (var sk in skills.Take(limit))
-                        skillTable.AddRow($"[cyan]{sk.FullName}[/]", sk.Description);
-                    
-                    AnsiConsole.Write(skillTable);
-                    AnsiConsole.MarkupLine($"\n[dim]找到 {skills.Count} 个技能[/]");
-                    break;
-
-                default:
-                    AnsiConsole.MarkupLine($"[red]✗ 未知类型: {type}[/]");
-                    break;
-            }
+            await _searchCommand.ExecuteAsync(query);
         }
         catch (Exception ex)
         {
@@ -935,29 +906,105 @@ public class AgentRepl
     /// </summary>
     private void HandleAliasCommand(string[] args)
     {
+        // TODO: Phase 5/6 - not implemented yet
+        AnsiConsole.MarkupLine("[yellow]⚠ 别名功能尚未实现[/]");
+
+        // if (args.Length == 0)
+        // {
+        //     // 显示所有别名
+        //     var aliases = _aliasManager.GetAllAliases();
+        //     if (aliases.Count == 0)
+        //     {
+        //         AnsiConsole.MarkupLine("[yellow]⚠ 没有配置任何别名[/]");
+        //         return;
+        //     }
+
+        //     var table = new Table()
+        //         .Border(TableBorder.Rounded)
+        //         .AddColumn("别名")
+        //         .AddColumn("命令");
+
+        //     foreach (var (alias, command) in aliases.OrderBy(x => x.Key))
+        //     {
+        //         table.AddRow($"[cyan]{alias}[/]", command);
+        //     }
+
+        //     AnsiConsole.MarkupLine($"[bold]已配置 {aliases.Count} 个别名：[/]");
+        //     AnsiConsole.Write(table);
+        //     AnsiConsole.MarkupLine("\n[dim]💡 提示: 使用 /alias add <别名> <命令> 添加新别名[/]");
+        //     return;
+        // }
+
+        // var subCommand = args[0].ToLower();
+
+        // try
+        // {
+        //     switch (subCommand)
+        //     {
+        //         case "list":
+        //             // 递归调用自己显示列表
+        //             HandleAliasCommand(Array.Empty<string>());
+        //             break;
+
+        //         case "add":
+        //             if (args.Length < 3)
+        //             {
+        //                 AnsiConsole.MarkupLine("[red]✗ 用法: /alias add <别名> <命令>[/]");
+        //                 AnsiConsole.MarkupLine("[dim]示例: /alias add n new[/]");
+        //                 return;
+        //             }
+
+        //             var newAlias = args[1];
+        //             var newCommand = args[2];
+
+        //             _aliasManager.AddAlias(newAlias, newCommand);
+        //             _aliasManager.SaveAliases();
+        //             AnsiConsole.MarkupLine($"[green]✓ 已添加别名: {newAlias} -> {newCommand}[/]");
+        //             break;
+
+        //         case "remove":
+        //         case "delete":
+        //         case "rm":
+        //             if (args.Length < 2)
+        //             {
+        //                 AnsiConsole.MarkupLine("[red]✗ 用法: /alias remove <别名>[/]");
+        //                 AnsiConsole.MarkupLine("[dim]示例: /alias remove n[/]");
+        //                 return;
+        //             }
+
+        //             var aliasToRemove = args[1];
+        //             if (_aliasManager.RemoveAlias(aliasToRemove))
+        //             {
+        //                 _aliasManager.SaveAliases();
+        //                 AnsiConsole.MarkupLine($"[green]✓ 已移除别名: {aliasToRemove}[/]");
+        //             }
+        //             else
+        //             {
+        //                 AnsiConsole.MarkupLine($"[yellow]⚠ 别名不存在: {aliasToRemove}[/]");
+        //             }
+        //             break;
+
+        //         default:
+        //             AnsiConsole.MarkupLine($"[red]✗ 未知子命令: {subCommand}[/]");
+        //             AnsiConsole.MarkupLine("[dim]💡 提示: 可用命令: list, add, remove[/]");
+        //             break;
+        //     }
+        // }
+        // catch (Exception ex)
+        // {
+        //     _logger.LogError(ex, "处理别名命令失败");
+        //     AnsiConsole.MarkupLine($"[red]✗ 错误: {ex.Message}[/]");
+        // }
+    }
+
+    /// <summary>
+    /// 处理标签命令
+    /// </summary>
+    private async Task HandleTagCommandAsync(string[] args, CancellationToken ct = default)
+    {
         if (args.Length == 0)
         {
-            // 显示所有别名
-            var aliases = _aliasManager.GetAllAliases();
-            if (aliases.Count == 0)
-            {
-                AnsiConsole.MarkupLine("[yellow]⚠ 没有配置任何别名[/]");
-                return;
-            }
-
-            var table = new Table()
-                .Border(TableBorder.Rounded)
-                .AddColumn("别名")
-                .AddColumn("命令");
-
-            foreach (var (alias, command) in aliases.OrderBy(x => x.Key))
-            {
-                table.AddRow($"[cyan]{alias}[/]", command);
-            }
-
-            AnsiConsole.MarkupLine($"[bold]已配置 {aliases.Count} 个别名：[/]");
-            AnsiConsole.Write(table);
-            AnsiConsole.MarkupLine("\n[dim]💡 提示: 使用 /alias add <别名> <命令> 添加新别名[/]");
+            ShowTagHelp();
             return;
         }
 
@@ -967,59 +1014,144 @@ public class AgentRepl
         {
             switch (subCommand)
             {
-                case "list":
-                    // 递归调用自己显示列表
-                    HandleAliasCommand(Array.Empty<string>());
-                    break;
-
                 case "add":
-                    if (args.Length < 3)
+                    if (args.Length < 2)
                     {
-                        AnsiConsole.MarkupLine("[red]✗ 用法: /alias add <别名> <命令>[/]");
-                        AnsiConsole.MarkupLine("[dim]示例: /alias add n new[/]");
+                        AnsiConsole.MarkupLine("[red]✗ 用法: /tag add <标签> [[--emoji 🐍]] [[--color #FF0000]][/]");
                         return;
                     }
 
-                    var newAlias = args[1];
-                    var newCommand = args[2];
+                    if (_currentSessionId == Guid.Empty)
+                    {
+                        AnsiConsole.MarkupLine("[red]✗ 错误: 没有活动会话[/]");
+                        return;
+                    }
 
-                    _aliasManager.AddAlias(newAlias, newCommand);
-                    _aliasManager.SaveAliases();
-                    AnsiConsole.MarkupLine($"[green]✓ 已添加别名: {newAlias} -> {newCommand}[/]");
+                    var tagName = args[1];
+                    string? emoji = null;
+                    string? color = null;
+
+                    // 解析可选参数
+                    for (int i = 2; i < args.Length; i++)
+                    {
+                        if (args[i] == "--emoji" && i + 1 < args.Length)
+                        {
+                            emoji = args[i + 1];
+                            i++;
+                        }
+                        else if (args[i] == "--color" && i + 1 < args.Length)
+                        {
+                            color = args[i + 1];
+                            i++;
+                        }
+                    }
+
+                    await _tagCommand.ExecuteAddAsync(_currentSessionId, tagName, emoji, color, ct);
                     break;
 
                 case "remove":
-                case "delete":
                 case "rm":
                     if (args.Length < 2)
                     {
-                        AnsiConsole.MarkupLine("[red]✗ 用法: /alias remove <别名>[/]");
-                        AnsiConsole.MarkupLine("[dim]示例: /alias remove n[/]");
+                        AnsiConsole.MarkupLine("[red]✗ 用法: /tag remove <标签>[/]");
                         return;
                     }
 
-                    var aliasToRemove = args[1];
-                    if (_aliasManager.RemoveAlias(aliasToRemove))
+                    if (_currentSessionId == Guid.Empty)
                     {
-                        _aliasManager.SaveAliases();
-                        AnsiConsole.MarkupLine($"[green]✓ 已移除别名: {aliasToRemove}[/]");
+                        AnsiConsole.MarkupLine("[red]✗ 错误: 没有活动会话[/]");
+                        return;
+                    }
+
+                    await _tagCommand.ExecuteRemoveAsync(_currentSessionId, args[1], ct);
+                    break;
+
+                case "list":
+                case "ls":
+                    // 检查是否有 --all 标志
+                    bool showAll = args.Length > 1 && args[1] == "--all";
+
+                    if (showAll)
+                    {
+                        // 列出所有标签
+                        await _tagCommand.ExecuteListAsync(null, ct);
                     }
                     else
                     {
-                        AnsiConsole.MarkupLine($"[yellow]⚠ 别名不存在: {aliasToRemove}[/]");
+                        // 列出当前会话标签
+                        if (_currentSessionId == Guid.Empty)
+                        {
+                            AnsiConsole.MarkupLine("[red]✗ 错误: 没有活动会话[/]");
+                            return;
+                        }
+                        await _tagCommand.ExecuteListAsync(_currentSessionId, ct);
                     }
+                    break;
+
+                case "suggest":
+                    if (_currentSessionId == Guid.Empty)
+                    {
+                        AnsiConsole.MarkupLine("[red]✗ 错误: 没有活动会话[/]");
+                        return;
+                    }
+
+                    // 获取当前会话标题
+                    var session = await _sessionService.GetSessionAsync(_currentSessionId, ct);
+                    if (session == null)
+                    {
+                        AnsiConsole.MarkupLine("[red]✗ 会话不存在[/]");
+                        return;
+                    }
+
+                    var sessionTitle = session.Title ?? "未命名会话";
+                    await _tagCommand.ExecuteSuggestAsync(_currentSessionId, sessionTitle, ct);
                     break;
 
                 default:
                     AnsiConsole.MarkupLine($"[red]✗ 未知子命令: {subCommand}[/]");
-                    AnsiConsole.MarkupLine("[dim]💡 提示: 可用命令: list, add, remove[/]");
+                    ShowTagHelp();
                     break;
             }
         }
         catch (Exception ex)
         {
-            _logger.LogError(ex, "处理别名命令失败");
+            _logger.LogError(ex, "处理标签命令失败");
             AnsiConsole.MarkupLine($"[red]✗ 错误: {ex.Message}[/]");
         }
+    }
+
+    /// <summary>
+    /// 显示标签命令帮助
+    /// </summary>
+    private void ShowTagHelp()
+    {
+        var table = new Table()
+            .Border(TableBorder.Rounded)
+            .AddColumn("命令")
+            .AddColumn("说明");
+
+        table.AddRow("[cyan]/tag add <标签> [[--emoji 🐍]] [[--color #FF0000]][/]", "添加标签到当前会话");
+        table.AddRow("[cyan]/tag remove <标签>[/]", "从当前会话移除标签");
+        table.AddRow("[cyan]/tag list[/]", "列出当前会话的标签");
+        table.AddRow("[cyan]/tag list --all[/]", "列出所有标签及使用统计");
+        table.AddRow("[cyan]/tag suggest[/]", "基于会话标题生成标签建议");
+
+        AnsiConsole.MarkupLine("[bold yellow]标签命令：[/]");
+        AnsiConsole.Write(table);
+        AnsiConsole.WriteLine();
+
+        // 示例
+        var examplePanel = new Panel(
+            new Markup("[bold]示例：[/]\n" +
+                      "[cyan]/tag add python --emoji 🐍 --color #3776AB[/]\n" +
+                      "[cyan]/tag remove python[/]\n" +
+                      "[cyan]/tag list[/]\n" +
+                      "[cyan]/tag list --all[/]\n" +
+                      "[cyan]/tag suggest[/]"))
+        {
+            Header = new PanelHeader("[yellow]示例[/]"),
+            Border = BoxBorder.Rounded
+        };
+        AnsiConsole.Write(examplePanel);
     }
 }

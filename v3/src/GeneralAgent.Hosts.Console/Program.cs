@@ -4,6 +4,7 @@ using GeneralAgent.Application;
 using GeneralAgent.Application.Services;
 using GeneralAgent.Hosts.Console;
 using GeneralAgent.Hosts.Console.Commands;
+using GeneralAgent.Hosts.Console.Services;
 using GeneralAgent.Infrastructure;
 using GeneralAgent.Infrastructure.LLM;
 using GeneralAgent.Infrastructure.Storage;
@@ -27,9 +28,13 @@ try
     builder.Services.AddInfrastructure(connectionString);
     builder.Services.AddLLMInfrastructure(builder.Configuration);
     builder.Services.AddApplicationLayer(builder.Configuration);
+    builder.Services.AddHostedService<BackgroundTaskService>();
 
-    // 3. 注册 AgentRepl
+    // 3. 注册 AgentRepl 和 Console 服务
     builder.Services.AddSingleton<AgentRepl>();
+    builder.Services.AddScoped<ISearchService, SearchService>();
+    builder.Services.AddScoped<SearchCommand>();
+    builder.Services.AddScoped<TagCommand>();
 
     // 4. 配置日志
     builder.Logging.ClearProviders();
@@ -48,7 +53,7 @@ try
         await dbContext.Database.MigrateAsync();
     }
 
-    // 6. 初始化技能系统
+    // 7. 初始化技能系统
     using (var scope = host.Services.CreateScope())
     {
         var skillService = scope.ServiceProvider.GetRequiredService<SkillService>();
@@ -76,7 +81,7 @@ try
         }
     }
 
-    // 7. 创建并执行命令
+    // 8. 创建并执行命令
     var rootCommand = AgentRootCommand.Create(host.Services);
     return await rootCommand.InvokeAsync(args);
 }

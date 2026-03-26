@@ -1,5 +1,6 @@
 using GeneralAgent.Application.DependencyInjection;
 using GeneralAgent.Application.Services;
+using GeneralAgent.Core.Abstractions;
 using GeneralAgent.Infrastructure.Skills;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
@@ -34,6 +35,12 @@ public static class ApplicationDependencyInjection
         services.AddScoped<SessionService>();
         services.AddScoped<ConversationService>();
         services.AddSingleton<IConfigurationService, ConfigurationService>();
+
+        // 注册智能标签服务
+        services.AddScoped<ISmartTagService, SmartTagService>();
+
+        // 注册自然语言查询服务
+        services.AddScoped<NaturalLanguageQueryService>();
 
         return services;
     }
