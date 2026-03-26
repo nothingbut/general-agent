@@ -345,18 +345,17 @@ public class AgentRepl
 
         // 搜索
         table.AddRow("", "");
-        table.AddRow("[bold yellow]搜索[/]", "");
-        table.AddRow("[cyan]/search <关键词>[/]", "搜索会话");
-        table.AddRow("[cyan]/search <关键词> --type skill[/]", "搜索技能");
+        table.AddRow("[bold yellow]搜索功能[/] [green](V3.1 新增)[/]", "");
+        table.AddRow("[cyan]/search <查询>[/]", "使用自然语言搜索消息内容");
 
         // 标签管理
         table.AddRow("", "");
-        table.AddRow("[bold yellow]标签管理[/]", "");
-        table.AddRow("[cyan]/tag add <标签> [[--emoji 🐍]] [[--color #FF0000]][/]", "添加标签到当前会话");
+        table.AddRow("[bold yellow]标签管理[/] [green](V3.1 新增)[/]", "");
+        table.AddRow("[cyan]/tag add <标签> [[--emoji 🐍]] [[--color #FF0000]][/]", "为当前会话添加标签");
         table.AddRow("[cyan]/tag remove <标签>[/]", "从当前会话移除标签");
         table.AddRow("[cyan]/tag list[/]", "列出当前会话的标签");
         table.AddRow("[cyan]/tag list --all[/]", "列出所有标签及使用统计");
-        table.AddRow("[cyan]/tag suggest[/]", "基于会话标题生成标签建议");
+        table.AddRow("[cyan]/tag suggest[/]", "基于会话标题生成智能标签建议");
 
         // 别名
         table.AddRow("", "");
