@@ -22,6 +22,8 @@ public sealed class SearchQueryCache : ISearchQueryCache
 
     public SearchQuery? Get(string naturalQuery)
     {
+        ArgumentNullException.ThrowIfNull(naturalQuery);
+
         lock (_lock)
         {
             if (_cache.TryGetValue(naturalQuery, out var node))
@@ -46,14 +48,23 @@ public sealed class SearchQueryCache : ISearchQueryCache
 
     public void Set(string naturalQuery, SearchQuery searchQuery)
     {
+        ArgumentNullException.ThrowIfNull(naturalQuery);
+        ArgumentNullException.ThrowIfNull(searchQuery);
+
         lock (_lock)
         {
             if (_cache.TryGetValue(naturalQuery, out var existingNode))
             {
-                // 更新现有项
-                existingNode.Value = new CacheEntry(searchQuery, DateTime.UtcNow);
+                // 移除旧节点
+                _cache.Remove(naturalQuery);
                 _lruList.Remove(existingNode);
-                _lruList.AddFirst(existingNode);
+
+                // 创建新节点并添加
+                var newNode = new LinkedListNode<CacheEntry>(
+                    new CacheEntry(searchQuery, DateTime.UtcNow)
+                );
+                _lruList.AddFirst(newNode);
+                _cache[naturalQuery] = newNode;
             }
             else
             {

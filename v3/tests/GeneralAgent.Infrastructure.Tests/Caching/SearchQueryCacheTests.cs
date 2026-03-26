@@ -82,11 +82,12 @@ public class SearchQueryCacheTests
     public void Get_ExpiredEntry_ReturnsNull()
     {
         // Arrange
-        var cache = new SearchQueryCache(ttl: TimeSpan.FromMilliseconds(50));
+        var ttl = TimeSpan.FromMilliseconds(10);
+        var cache = new SearchQueryCache(ttl: ttl);
         cache.Set("query1", new SearchQuery { NaturalQuery = "query1" });
 
         // Act
-        Thread.Sleep(100); // 等待过期
+        Thread.Sleep((int)(ttl.TotalMilliseconds * 2 + 50)); // TTL * 2 + 缓冲
         var result = cache.Get("query1");
 
         // Assert
