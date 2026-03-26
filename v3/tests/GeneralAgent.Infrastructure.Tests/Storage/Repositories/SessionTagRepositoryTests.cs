@@ -15,6 +15,7 @@ public class SessionTagRepositoryTests : IDisposable
 {
     private readonly AgentDbContext _context;
     private readonly ISessionTagRepository _repository;
+    private readonly ISessionRepository _sessionRepository;
 
     public SessionTagRepositoryTests()
     {
@@ -28,6 +29,7 @@ public class SessionTagRepositoryTests : IDisposable
         _context.Database.EnsureCreated();
 
         _repository = new SessionTagRepository(_context);
+        _sessionRepository = new SessionRepository(_context);
     }
 
     public void Dispose()
@@ -36,11 +38,21 @@ public class SessionTagRepositoryTests : IDisposable
         _context.Dispose();
     }
 
+    /// <summary>
+    /// 创建测试会话（满足外键约束）
+    /// </summary>
+    private async Task<Guid> CreateTestSessionAsync(string? title = null)
+    {
+        var session = Session.Create(title);
+        await _sessionRepository.CreateAsync(session);
+        return session.Id;
+    }
+
     [Fact]
     public async Task AddAsync_ShouldPersistTag()
     {
         // Arrange
-        var sessionId = Guid.NewGuid();
+        var sessionId = await CreateTestSessionAsync();
         var tag = SessionTag.Create(
             sessionId: sessionId,
             tag: "Important",
@@ -65,12 +77,17 @@ public class SessionTagRepositoryTests : IDisposable
     public async Task AddAsync_WhenDuplicateTag_ShouldThrowStorageException()
     {
         // Arrange
-        var sessionId = Guid.NewGuid();
+        var sessionId = await CreateTestSessionAsync();
         var tag1 = SessionTag.Create(sessionId, "duplicate");
-        var tag2 = SessionTag.Create(sessionId, "duplicate"); // 同一会话相同标签
+        await _repository.AddAsync(tag1);
+
+        // 清理上下文，模拟新请求
+        _context.ChangeTracker.Clear();
+
+        // 尝试添加相同的标签
+        var tag2 = SessionTag.Create(sessionId, "duplicate");
 
         // Act
-        await _repository.AddAsync(tag1);
         var act = async () => await _repository.AddAsync(tag2);
 
         // Assert
@@ -82,7 +99,7 @@ public class SessionTagRepositoryTests : IDisposable
     public async Task GetBySessionAsync_ShouldReturnAllTags()
     {
         // Arrange
-        var sessionId = Guid.NewGuid();
+        var sessionId = await CreateTestSessionAsync();
         var tag1 = SessionTag.Create(sessionId, "bug");
         var tag2 = SessionTag.Create(sessionId, "feature");
         var tag3 = SessionTag.Create(sessionId, "urgent");
@@ -92,7 +109,7 @@ public class SessionTagRepositoryTests : IDisposable
         await _repository.AddAsync(tag3);
 
         // 添加其他会话的标签（不应返回）
-        var otherSessionId = Guid.NewGuid();
+        var otherSessionId = await CreateTestSessionAsync();
         await _repository.AddAsync(SessionTag.Create(otherSessionId, "other"));
 
         // Act
@@ -110,7 +127,7 @@ public class SessionTagRepositoryTests : IDisposable
     public async Task RemoveAsync_ShouldDeleteTag()
     {
         // Arrange
-        var sessionId = Guid.NewGuid();
+        var sessionId = await CreateTestSessionAsync();
         var tag = SessionTag.Create(sessionId, "ToDelete");
         await _repository.AddAsync(tag);
 
@@ -126,7 +143,7 @@ public class SessionTagRepositoryTests : IDisposable
     public async Task RemoveAsync_WhenTagNotExists_ShouldNotThrow()
     {
         // Arrange
-        var sessionId = Guid.NewGuid();
+        var sessionId = await CreateTestSessionAsync();
 
         // Act
         var act = async () => await _repository.RemoveAsync(sessionId, "nonexistent");
@@ -139,9 +156,9 @@ public class SessionTagRepositoryTests : IDisposable
     public async Task GetByTagAsync_ShouldReturnMatchingSessions()
     {
         // Arrange
-        var session1 = Guid.NewGuid();
-        var session2 = Guid.NewGuid();
-        var session3 = Guid.NewGuid();
+        var session1 = await CreateTestSessionAsync();
+        var session2 = await CreateTestSessionAsync();
+        var session3 = await CreateTestSessionAsync();
 
         await _repository.AddAsync(SessionTag.Create(session1, "bug"));
         await _repository.AddAsync(SessionTag.Create(session2, "bug"));
@@ -161,8 +178,8 @@ public class SessionTagRepositoryTests : IDisposable
     public async Task GetAllTagsAsync_ShouldReturnDistinctTags()
     {
         // Arrange
-        var session1 = Guid.NewGuid();
-        var session2 = Guid.NewGuid();
+        var session1 = await CreateTestSessionAsync();
+        var session2 = await CreateTestSessionAsync();
 
         await _repository.AddAsync(SessionTag.Create(session1, "bug"));
         await _repository.AddAsync(SessionTag.Create(session1, "feature"));
@@ -183,9 +200,9 @@ public class SessionTagRepositoryTests : IDisposable
     public async Task GetTagStatisticsAsync_ShouldReturnTagCounts()
     {
         // Arrange
-        var session1 = Guid.NewGuid();
-        var session2 = Guid.NewGuid();
-        var session3 = Guid.NewGuid();
+        var session1 = await CreateTestSessionAsync();
+        var session2 = await CreateTestSessionAsync();
+        var session3 = await CreateTestSessionAsync();
 
         // "python" 标签在 2 个会话中使用
         await _repository.AddAsync(SessionTag.Create(session1, "python"));
@@ -213,13 +230,13 @@ public class SessionTagRepositoryTests : IDisposable
     public async Task RemoveBySessionAsync_ShouldDeleteAllSessionTags()
     {
         // Arrange
-        var sessionId = Guid.NewGuid();
+        var sessionId = await CreateTestSessionAsync();
         await _repository.AddAsync(SessionTag.Create(sessionId, "tag1"));
         await _repository.AddAsync(SessionTag.Create(sessionId, "tag2"));
         await _repository.AddAsync(SessionTag.Create(sessionId, "tag3"));
 
         // 添加其他会话的标签（不应删除）
-        var otherSessionId = Guid.NewGuid();
+        var otherSessionId = await CreateTestSessionAsync();
         await _repository.AddAsync(SessionTag.Create(otherSessionId, "keep"));
 
         // Act

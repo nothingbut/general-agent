@@ -37,8 +37,13 @@ internal sealed class SessionTagConfiguration : IEntityTypeConfiguration<Session
             .HasMaxLength(20)
             .IsRequired();
 
+        // 外键关系
+        builder.HasOne<Session>()
+            .WithMany()
+            .HasForeignKey(t => t.SessionId)
+            .OnDelete(DeleteBehavior.Cascade);
+
         // 索引
         builder.HasIndex(t => t.Tag); // 按标签查找会话
-        builder.HasIndex(t => t.SessionId); // 按会话查找标签
     }
 }

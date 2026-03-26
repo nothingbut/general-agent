@@ -1,6 +1,7 @@
 using GeneralAgent.Core.Abstractions;
 using GeneralAgent.Core.Exceptions;
 using GeneralAgent.Core.Models;
+using Microsoft.Data.Sqlite;
 using Microsoft.EntityFrameworkCore;
 
 namespace GeneralAgent.Infrastructure.Storage.Repositories;
@@ -21,21 +22,17 @@ public sealed class SessionTagRepository : ISessionTagRepository
     {
         try
         {
-            // 检查是否已存在相同的标签（大小写不敏感）
-            var exists = await _context.Set<SessionTag>()
-                .AnyAsync(t => t.SessionId == tag.SessionId && t.Tag == tag.Tag.ToLowerInvariant(), ct);
-
-            if (exists)
-            {
-                throw new StorageException($"Tag '{tag.Tag}' already exists for session {tag.SessionId}");
-            }
-
             _context.Set<SessionTag>().Add(tag);
             await _context.SaveChangesAsync(ct);
         }
+        catch (DbUpdateException ex) when (IsDuplicateKeyError(ex))
+        {
+            throw new StorageException(
+                $"Tag '{tag.Tag}' already exists for session {tag.SessionId}");
+        }
         catch (StorageException)
         {
-            throw;
+            throw; // 不重新包装
         }
         catch (Exception ex)
         {
@@ -70,7 +67,7 @@ public sealed class SessionTagRepository : ISessionTagRepository
             return await _context.Set<SessionTag>()
                 .AsNoTracking()
                 .Where(t => t.SessionId == sessionId)
-                .OrderBy(t => t.Tag)
+                .OrderBy(t => t.CreatedAt)
                 .ToListAsync(ct);
         }
         catch (Exception ex)
@@ -142,5 +139,11 @@ public sealed class SessionTagRepository : ISessionTagRepository
         {
             throw new StorageException($"Failed to remove tags by session: {ex.Message}", ex);
         }
+    }
+
+    private static bool IsDuplicateKeyError(DbUpdateException ex)
+    {
+        return ex.InnerException is SqliteException sqliteEx
+            && sqliteEx.SqliteErrorCode == 19; // SQLITE_CONSTRAINT
     }
 }
