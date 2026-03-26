@@ -39,6 +39,9 @@ public static class ApplicationDependencyInjection
         // 注册智能标签服务
         services.AddScoped<ISmartTagService, SmartTagService>();
 
+        // 注册自然语言查询服务
+        services.AddScoped<NaturalLanguageQueryService>();
+
         return services;
     }
 }

@@ -2,7 +2,8 @@ using GeneralAgent.Application.Services;
 using GeneralAgent.Core.Abstractions;
 using GeneralAgent.Core.Models;
 // using GeneralAgent.Hosts.Console.Repl; // TODO: Phase 5/6 - not implemented yet
-// using GeneralAgent.Hosts.Console.Services; // TODO: Phase 5/6 - not implemented yet
+using GeneralAgent.Hosts.Console.Commands;
+using GeneralAgent.Hosts.Console.Services;
 using GeneralAgent.Infrastructure.LLM;
 using GeneralAgent.Infrastructure.Skills.Models;
 using Microsoft.Extensions.Logging;
@@ -21,13 +22,13 @@ public class AgentRepl
     private readonly ConversationService _conversationService;
     private readonly IMessageRepository _messageRepository;
     private readonly SkillService _skillService;
+    private readonly SearchCommand _searchCommand;
     private readonly LLMOptions _llmOptions;
     private readonly ILogger<AgentRepl> _logger;
     // TODO: Phase 5/6 - not implemented yet
     // private readonly ReplHistoryManager _historyManager;
     // private readonly AutoCompletionHandler _completionHandler;
     // private readonly MultiLineInputHandler _multiLineHandler;
-    // private readonly SearchService _searchService;
     // private readonly AliasManager _aliasManager;
 
     private Guid _currentSessionId = Guid.Empty;
@@ -38,6 +39,7 @@ public class AgentRepl
         ConversationService conversationService,
         IMessageRepository messageRepository,
         SkillService skillService,
+        SearchCommand searchCommand,
         IOptions<LLMOptions> llmOptions,
         ILogger<AgentRepl> logger)
     {
@@ -45,6 +47,7 @@ public class AgentRepl
         _conversationService = conversationService;
         _messageRepository = messageRepository;
         _skillService = skillService;
+        _searchCommand = searchCommand;
         _llmOptions = llmOptions.Value;
         _logger = logger;
 
@@ -255,9 +258,7 @@ public class AgentRepl
                 return false;
 
             case "search":
-                // TODO: Phase 5/6 - not implemented yet
-                AnsiConsole.MarkupLine("[yellow]⚠ 搜索功能尚未实现[/]");
-                // await SearchAsync(args);
+                await SearchAsync(args);
                 return false;
 
             case "alias":
@@ -865,86 +866,24 @@ public class AgentRepl
     /// </summary>
     private async Task SearchAsync(string[] args)
     {
-        // TODO: Phase 5/6 - not implemented yet
-        AnsiConsole.MarkupLine("[yellow]⚠ 搜索功能尚未实现[/]");
-        await Task.CompletedTask;
+        if (args.Length == 0)
+        {
+            AnsiConsole.MarkupLine("[red]✗ 用法: /search <查询>[/]");
+            AnsiConsole.MarkupLine("[dim]示例: /search 查找昨天关于 Python 的讨论[/]");
+            return;
+        }
 
-        // if (args.Length == 0)
-        // {
-        //     AnsiConsole.MarkupLine("[red]✗ 用法: /search <关键词> [--type session|message|skill][/]");
-        //     AnsiConsole.MarkupLine("[dim]示例: /search hello --type session[/]");
-        //     return;
-        // }
+        var query = string.Join(' ', args);
 
-        // var query = args[0];
-        // var type = "session";
-        // var limit = 10;
-
-        // // 解析参数
-        // for (int i = 1; i < args.Length; i++)
-        // {
-        //     if (args[i] == "--type" || args[i] == "-t")
-        //     {
-        //         if (i + 1 < args.Length)
-        //             type = args[++i];
-        //     }
-        //     else if (args[i] == "--limit" || args[i] == "-l")
-        //     {
-        //         if (i + 1 < args.Length && int.TryParse(args[++i], out var l))
-        //             limit = l;
-        //     }
-        // }
-
-        // try
-        // {
-        //     switch (type.ToLower())
-        //     {
-        //         case "session":
-        //             var sessions = await _searchService.SearchSessionsAsync(query, limit);
-        //             if (sessions.Total == 0)
-        //             {
-        //                 AnsiConsole.MarkupLine("[yellow]⚠ 未找到匹配的会话[/]");
-        //                 return;
-        //             }
-
-        //             var table = new Table().Border(TableBorder.Rounded)
-        //                 .AddColumn("ID").AddColumn("标题").AddColumn("创建时间");
-
-        //             foreach (var s in sessions.Items)
-        //                 table.AddRow($"[cyan]{s.Id.ToString()[..8]}...[/]", s.Title ?? "无", s.CreatedAt.ToString("yyyy-MM-dd HH:mm"));
-
-        //             AnsiConsole.Write(table);
-        //             AnsiConsole.MarkupLine($"\n[dim]找到 {sessions.Total} 个会话[/]");
-        //             break;
-
-        //         case "skill":
-        //             var skills = _searchService.SearchSkills(query);
-        //             if (skills.Count == 0)
-        //             {
-        //                 AnsiConsole.MarkupLine("[yellow]⚠ 未找到匹配的技能[/]");
-        //                 return;
-        //             }
-
-        //             var skillTable = new Table().Border(TableBorder.Rounded)
-        //                 .AddColumn("名称").AddColumn("描述");
-
-        //             foreach (var sk in skills.Take(limit))
-        //                 skillTable.AddRow($"[cyan]{sk.FullName}[/]", sk.Description);
-
-        //             AnsiConsole.Write(skillTable);
-        //             AnsiConsole.MarkupLine($"\n[dim]找到 {skills.Count} 个技能[/]");
-        //             break;
-
-        //         default:
-        //             AnsiConsole.MarkupLine($"[red]✗ 未知类型: {type}[/]");
-        //             break;
-        //     }
-        // }
-        // catch (Exception ex)
-        // {
-        //     _logger.LogError(ex, "搜索失败");
-        //     AnsiConsole.MarkupLine($"[red]✗ 搜索失败: {ex.Message}[/]");
-        // }
+        try
+        {
+            await _searchCommand.ExecuteAsync(query);
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "搜索失败");
+            AnsiConsole.MarkupLine($"[red]✗ 搜索失败: {ex.Message}[/]");
+        }
     }
 
     /// <summary>
