@@ -27,6 +27,7 @@ try
     builder.Services.AddInfrastructure(connectionString);
     builder.Services.AddLLMInfrastructure(builder.Configuration);
     builder.Services.AddApplicationLayer(builder.Configuration);
+    builder.Services.AddHostedService<BackgroundTaskService>();
 
     // 3. 注册 AgentRepl
     builder.Services.AddSingleton<AgentRepl>();
@@ -48,7 +49,7 @@ try
         await dbContext.Database.MigrateAsync();
     }
 
-    // 6. 初始化技能系统
+    // 7. 初始化技能系统
     using (var scope = host.Services.CreateScope())
     {
         var skillService = scope.ServiceProvider.GetRequiredService<SkillService>();
@@ -76,7 +77,7 @@ try
         }
     }
 
-    // 7. 创建并执行命令
+    // 8. 创建并执行命令
     var rootCommand = AgentRootCommand.Create(host.Services);
     return await rootCommand.InvokeAsync(args);
 }
