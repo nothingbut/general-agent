@@ -23,6 +23,11 @@ public sealed class AgentDbContext : DbContext
     /// </summary>
     public DbSet<Message> Messages => Set<Message>();
 
+    /// <summary>
+    /// 会话标签集合
+    /// </summary>
+    public DbSet<SessionTag> SessionTags => Set<SessionTag>();
+
     protected override void OnModelCreating(ModelBuilder modelBuilder)
     {
         base.OnModelCreating(modelBuilder);
