@@ -34,6 +34,7 @@ try
     builder.Services.AddSingleton<AgentRepl>();
     builder.Services.AddScoped<ISearchService, SearchService>();
     builder.Services.AddScoped<SearchCommand>();
+    builder.Services.AddScoped<TagCommand>();
 
     // 4. 配置日志
     builder.Logging.ClearProviders();

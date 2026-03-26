@@ -23,6 +23,7 @@ public class AgentRepl
     private readonly IMessageRepository _messageRepository;
     private readonly SkillService _skillService;
     private readonly SearchCommand _searchCommand;
+    private readonly TagCommand _tagCommand;
     private readonly LLMOptions _llmOptions;
     private readonly ILogger<AgentRepl> _logger;
     // TODO: Phase 5/6 - not implemented yet
@@ -40,6 +41,7 @@ public class AgentRepl
         IMessageRepository messageRepository,
         SkillService skillService,
         SearchCommand searchCommand,
+        TagCommand tagCommand,
         IOptions<LLMOptions> llmOptions,
         ILogger<AgentRepl> logger)
     {
@@ -48,6 +50,7 @@ public class AgentRepl
         _messageRepository = messageRepository;
         _skillService = skillService;
         _searchCommand = searchCommand;
+        _tagCommand = tagCommand;
         _llmOptions = llmOptions.Value;
         _logger = logger;
 
@@ -261,6 +264,10 @@ public class AgentRepl
                 await SearchAsync(args);
                 return false;
 
+            case "tag":
+                await HandleTagCommandAsync(args);
+                return false;
+
             case "alias":
                 // TODO: Phase 5/6 - not implemented yet
                 AnsiConsole.MarkupLine("[yellow]⚠ 别名功能尚未实现[/]");
@@ -341,6 +348,15 @@ public class AgentRepl
         table.AddRow("[bold yellow]搜索[/]", "");
         table.AddRow("[cyan]/search <关键词>[/]", "搜索会话");
         table.AddRow("[cyan]/search <关键词> --type skill[/]", "搜索技能");
+
+        // 标签管理
+        table.AddRow("", "");
+        table.AddRow("[bold yellow]标签管理[/]", "");
+        table.AddRow("[cyan]/tag add <标签> [[--emoji 🐍]] [[--color #FF0000]][/]", "添加标签到当前会话");
+        table.AddRow("[cyan]/tag remove <标签>[/]", "从当前会话移除标签");
+        table.AddRow("[cyan]/tag list[/]", "列出当前会话的标签");
+        table.AddRow("[cyan]/tag list --all[/]", "列出所有标签及使用统计");
+        table.AddRow("[cyan]/tag suggest[/]", "基于会话标题生成标签建议");
 
         // 别名
         table.AddRow("", "");
@@ -980,5 +996,163 @@ public class AgentRepl
         //     _logger.LogError(ex, "处理别名命令失败");
         //     AnsiConsole.MarkupLine($"[red]✗ 错误: {ex.Message}[/]");
         // }
+    }
+
+    /// <summary>
+    /// 处理标签命令
+    /// </summary>
+    private async Task HandleTagCommandAsync(string[] args, CancellationToken ct = default)
+    {
+        if (args.Length == 0)
+        {
+            ShowTagHelp();
+            return;
+        }
+
+        var subCommand = args[0].ToLower();
+
+        try
+        {
+            switch (subCommand)
+            {
+                case "add":
+                    if (args.Length < 2)
+                    {
+                        AnsiConsole.MarkupLine("[red]✗ 用法: /tag add <标签> [[--emoji 🐍]] [[--color #FF0000]][/]");
+                        return;
+                    }
+
+                    if (_currentSessionId == Guid.Empty)
+                    {
+                        AnsiConsole.MarkupLine("[red]✗ 错误: 没有活动会话[/]");
+                        return;
+                    }
+
+                    var tagName = args[1];
+                    string? emoji = null;
+                    string? color = null;
+
+                    // 解析可选参数
+                    for (int i = 2; i < args.Length; i++)
+                    {
+                        if (args[i] == "--emoji" && i + 1 < args.Length)
+                        {
+                            emoji = args[i + 1];
+                            i++;
+                        }
+                        else if (args[i] == "--color" && i + 1 < args.Length)
+                        {
+                            color = args[i + 1];
+                            i++;
+                        }
+                    }
+
+                    await _tagCommand.ExecuteAddAsync(_currentSessionId, tagName, emoji, color, ct);
+                    break;
+
+                case "remove":
+                case "rm":
+                    if (args.Length < 2)
+                    {
+                        AnsiConsole.MarkupLine("[red]✗ 用法: /tag remove <标签>[/]");
+                        return;
+                    }
+
+                    if (_currentSessionId == Guid.Empty)
+                    {
+                        AnsiConsole.MarkupLine("[red]✗ 错误: 没有活动会话[/]");
+                        return;
+                    }
+
+                    await _tagCommand.ExecuteRemoveAsync(_currentSessionId, args[1], ct);
+                    break;
+
+                case "list":
+                case "ls":
+                    // 检查是否有 --all 标志
+                    bool showAll = args.Length > 1 && args[1] == "--all";
+
+                    if (showAll)
+                    {
+                        // 列出所有标签
+                        await _tagCommand.ExecuteListAsync(null, ct);
+                    }
+                    else
+                    {
+                        // 列出当前会话标签
+                        if (_currentSessionId == Guid.Empty)
+                        {
+                            AnsiConsole.MarkupLine("[red]✗ 错误: 没有活动会话[/]");
+                            return;
+                        }
+                        await _tagCommand.ExecuteListAsync(_currentSessionId, ct);
+                    }
+                    break;
+
+                case "suggest":
+                    if (_currentSessionId == Guid.Empty)
+                    {
+                        AnsiConsole.MarkupLine("[red]✗ 错误: 没有活动会话[/]");
+                        return;
+                    }
+
+                    // 获取当前会话标题
+                    var session = await _sessionService.GetSessionAsync(_currentSessionId, ct);
+                    if (session == null)
+                    {
+                        AnsiConsole.MarkupLine("[red]✗ 会话不存在[/]");
+                        return;
+                    }
+
+                    var sessionTitle = session.Title ?? "未命名会话";
+                    await _tagCommand.ExecuteSuggestAsync(_currentSessionId, sessionTitle, ct);
+                    break;
+
+                default:
+                    AnsiConsole.MarkupLine($"[red]✗ 未知子命令: {subCommand}[/]");
+                    ShowTagHelp();
+                    break;
+            }
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "处理标签命令失败");
+            AnsiConsole.MarkupLine($"[red]✗ 错误: {ex.Message}[/]");
+        }
+    }
+
+    /// <summary>
+    /// 显示标签命令帮助
+    /// </summary>
+    private void ShowTagHelp()
+    {
+        var table = new Table()
+            .Border(TableBorder.Rounded)
+            .AddColumn("命令")
+            .AddColumn("说明");
+
+        table.AddRow("[cyan]/tag add <标签> [[--emoji 🐍]] [[--color #FF0000]][/]", "添加标签到当前会话");
+        table.AddRow("[cyan]/tag remove <标签>[/]", "从当前会话移除标签");
+        table.AddRow("[cyan]/tag list[/]", "列出当前会话的标签");
+        table.AddRow("[cyan]/tag list --all[/]", "列出所有标签及使用统计");
+        table.AddRow("[cyan]/tag suggest[/]", "基于会话标题生成标签建议");
+
+        AnsiConsole.MarkupLine("[bold yellow]标签命令：[/]");
+        AnsiConsole.Write(table);
+        AnsiConsole.WriteLine();
+
+        // 示例
+        var examplePanel = new Panel(
+            new Markup("[bold]示例：[/]\n" +
+                      "[cyan]/tag add python --emoji 🐍 --color #3776AB[/]\n" +
+                      "[cyan]/tag remove python[/]\n" +
+                      "[cyan]/tag list[/]\n" +
+                      "[cyan]/tag list --all[/]\n" +
+                      "[cyan]/tag suggest[/]"))
+        {
+            Header = new PanelHeader("[yellow]示例[/]"),
+            Border = BoxBorder.Rounded
+        };
+        AnsiConsole.Write(examplePanel);
     }
 }
