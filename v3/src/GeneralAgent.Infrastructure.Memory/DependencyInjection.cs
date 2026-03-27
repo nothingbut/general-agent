@@ -1,5 +1,6 @@
 using GeneralAgent.Core.Abstractions;
 using GeneralAgent.Infrastructure.Memory.Repositories;
+using GeneralAgent.Infrastructure.Memory.Services;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
 
@@ -24,6 +25,10 @@ public static class DependencyInjection
         // 注册仓储
         services.AddSingleton<IMemoryRepository, MemoryRepository>();
         services.AddSingleton<IMemoryIndexManager, MemoryIndexManager>();
+
+        // 注册服务（LLM 驱动）
+        services.AddScoped<IMemoryExtractionService, MemoryExtractionService>();
+        services.AddScoped<IMemoryRetrievalService, MemoryRetrievalService>();
 
         return services;
     }

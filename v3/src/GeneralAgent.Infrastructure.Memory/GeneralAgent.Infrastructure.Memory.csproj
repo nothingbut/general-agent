@@ -2,6 +2,7 @@
 
   <ItemGroup>
     <ProjectReference Include="..\GeneralAgent.Core\GeneralAgent.Core.csproj" />
+    <ProjectReference Include="..\GeneralAgent.Infrastructure.LLM\GeneralAgent.Infrastructure.LLM.csproj" />
   </ItemGroup>
 
   <ItemGroup>
