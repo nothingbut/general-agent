@@ -27,6 +27,8 @@ public class AgentRepl
     private readonly TagCommand _tagCommand;
     private readonly IMemoryRepository _memoryRepository;
     private readonly IMemoryIndexManager _memoryIndexManager;
+    private readonly IMemoryExtractionService _memoryExtractionService;
+    private readonly IMemoryRetrievalService _memoryRetrievalService;
     private readonly LLMOptions _llmOptions;
     private readonly ILogger<AgentRepl> _logger;
     private readonly ReplHistoryManager _historyManager;
@@ -47,6 +49,8 @@ public class AgentRepl
         TagCommand tagCommand,
         IMemoryRepository memoryRepository,
         IMemoryIndexManager memoryIndexManager,
+        IMemoryExtractionService memoryExtractionService,
+        IMemoryRetrievalService memoryRetrievalService,
         IOptions<LLMOptions> llmOptions,
         ILogger<AgentRepl> logger)
     {
@@ -59,6 +63,8 @@ public class AgentRepl
         _tagCommand = tagCommand;
         _memoryRepository = memoryRepository;
         _memoryIndexManager = memoryIndexManager;
+        _memoryExtractionService = memoryExtractionService;
+        _memoryRetrievalService = memoryRetrievalService;
         _llmOptions = llmOptions.Value;
         _logger = logger;
 
@@ -1564,6 +1570,60 @@ public class AgentRepl
                     await SearchMemoriesAsync(query, ct);
                     break;
 
+                case "extract":
+                case "suggest":
+                    if (args.Length < 2)
+                    {
+                        AnsiConsole.MarkupLine("[red]✗ 用法: /memory extract <message>[/]");
+                        AnsiConsole.MarkupLine("[dim]示例: /memory extract '我喜欢使用 TDD 方法'[/]");
+                        return;
+                    }
+                    var message = string.Join(' ', args.Skip(1));
+                    await ExtractMemoriesAsync(message, ct);
+                    break;
+
+                case "relevant":
+                    if (args.Length < 2)
+                    {
+                        AnsiConsole.MarkupLine("[red]✗ 用法: /memory relevant <context>[/]");
+                        AnsiConsole.MarkupLine("[dim]示例: /memory relevant '实现 TDD 功能'[/]");
+                        return;
+                    }
+                    var context = string.Join(' ', args.Skip(1));
+                    await GetRelevantMemoriesAsync(context, ct);
+                    break;
+
+                case "semantic-search":
+                case "semantic":
+                    if (args.Length < 2)
+                    {
+                        AnsiConsole.MarkupLine("[red]✗ 用法: /memory semantic-search <query>[/]");
+                        return;
+                    }
+                    var semanticQuery = string.Join(' ', args.Skip(1));
+                    await SemanticSearchMemoriesAsync(semanticQuery, ct);
+                    break;
+
+                case "hybrid-search":
+                case "hybrid":
+                    if (args.Length < 2)
+                    {
+                        AnsiConsole.MarkupLine("[red]✗ 用法: /memory hybrid-search <query>[/]");
+                        return;
+                    }
+                    var hybridQuery = string.Join(' ', args.Skip(1));
+                    await HybridSearchMemoriesAsync(hybridQuery, ct);
+                    break;
+
+                case "importance":
+                    if (args.Length < 2)
+                    {
+                        AnsiConsole.MarkupLine("[red]✗ 用法: /memory importance <name>[/]");
+                        return;
+                    }
+                    await CalculateMemoryImportanceAsync(args[1], ct);
+                    break;
+
                 case "rebuild-index":
                 case "rebuild":
                     await RebuildMemoryIndexAsync(ct);
@@ -1951,6 +2011,257 @@ public class AgentRepl
     }
 
     /// <summary>
+    /// 从消息中提取记忆
+    /// </summary>
+    private async Task ExtractMemoriesAsync(string message, CancellationToken ct)
+    {
+        AnsiConsole.MarkupLine($"[cyan]🔍 正在从消息中提取记忆...[/]");
+        AnsiConsole.WriteLine();
+
+        // 调用提取服务
+        var suggestions = await _memoryExtractionService.ExtractFromMessageAsync(message, cancellationToken: ct);
+
+        if (suggestions.Count == 0)
+        {
+            AnsiConsole.MarkupLine("[yellow]✗ 未找到可提取的记忆[/]");
+            return;
+        }
+
+        AnsiConsole.MarkupLine($"[green]✓ 找到 {suggestions.Count} 个记忆建议[/]");
+        AnsiConsole.WriteLine();
+
+        // 显示建议列表
+        foreach (var suggestion in suggestions)
+        {
+            var panel = new Panel(
+                new Markup($"[bold]类型:[/] [yellow]{suggestion.Type}[/]\n" +
+                          $"[bold]名称:[/] {suggestion.Name}\n" +
+                          $"[bold]描述:[/] {suggestion.Description}\n" +
+                          $"[bold]置信度:[/] {suggestion.Confidence:P0}\n" +
+                          $"[bold]标签:[/] {string.Join(", ", suggestion.Tags)}\n" +
+                          $"[bold]内容:[/]\n{suggestion.Content}"))
+            {
+                Header = new PanelHeader($"[cyan]记忆建议[/]"),
+                Border = BoxBorder.Rounded
+            };
+            AnsiConsole.Write(panel);
+            AnsiConsole.WriteLine();
+
+            // 询问是否创建
+            var confirm = AnsiConsole.Confirm($"是否创建记忆 '{suggestion.Name}'?", false);
+
+            if (confirm)
+            {
+                var memory = await _memoryExtractionService.CreateMemoryFromSuggestionAsync(suggestion, ct);
+
+                if (memory != null)
+                {
+                    AnsiConsole.MarkupLine($"[green]✓ 记忆 '{memory.Name}' 已创建[/]");
+                }
+                else
+                {
+                    AnsiConsole.MarkupLine($"[yellow]✗ 记忆创建失败（可能已存在或置信度过低）[/]");
+                }
+            }
+            else
+            {
+                AnsiConsole.MarkupLine("[dim]已跳过[/]");
+            }
+
+            AnsiConsole.WriteLine();
+        }
+    }
+
+    /// <summary>
+    /// 获取相关记忆
+    /// </summary>
+    private async Task GetRelevantMemoriesAsync(string context, CancellationToken ct)
+    {
+        AnsiConsole.MarkupLine($"[cyan]🔍 正在查找相关记忆...[/]");
+        AnsiConsole.WriteLine();
+
+        var memories = await _memoryRetrievalService.GetRelevantMemoriesAsync(context, topK: 5, ct);
+
+        if (memories.Count == 0)
+        {
+            AnsiConsole.MarkupLine("[yellow]✗ 未找到相关记忆[/]");
+            return;
+        }
+
+        AnsiConsole.MarkupLine($"[green]✓ 找到 {memories.Count} 个相关记忆[/]");
+        AnsiConsole.WriteLine();
+
+        // 显示记忆列表
+        var table = new Table()
+            .Border(TableBorder.Rounded)
+            .AddColumn("名称")
+            .AddColumn("类型")
+            .AddColumn("描述");
+
+        foreach (var memory in memories)
+        {
+            table.AddRow(
+                $"[cyan]{memory.Name}[/]",
+                $"[yellow]{memory.Type}[/]",
+                memory.Description.Length > 50
+                    ? memory.Description[..50] + "..."
+                    : memory.Description);
+        }
+
+        AnsiConsole.Write(table);
+        AnsiConsole.WriteLine();
+
+        // 提示查看详情
+        AnsiConsole.MarkupLine("[dim]💡 使用 /memory show <name> 查看详情[/]");
+    }
+
+    /// <summary>
+    /// 语义搜索记忆
+    /// </summary>
+    private async Task SemanticSearchMemoriesAsync(string query, CancellationToken ct)
+    {
+        AnsiConsole.MarkupLine($"[cyan]🔍 语义搜索:[/] {query}");
+        AnsiConsole.WriteLine();
+
+        var memories = await _memoryRetrievalService.SearchBySemanticAsync(query, topK: 5, cancellationToken: ct);
+
+        if (memories.Count == 0)
+        {
+            AnsiConsole.MarkupLine("[yellow]✗ 未找到匹配的记忆[/]");
+            return;
+        }
+
+        AnsiConsole.MarkupLine($"[green]✓ 找到 {memories.Count} 个记忆（按相关性排序）[/]");
+        AnsiConsole.WriteLine();
+
+        // 显示记忆列表
+        var table = new Table()
+            .Border(TableBorder.Rounded)
+            .AddColumn("名称")
+            .AddColumn("类型")
+            .AddColumn("描述");
+
+        foreach (var memory in memories)
+        {
+            table.AddRow(
+                $"[cyan]{memory.Name}[/]",
+                $"[yellow]{memory.Type}[/]",
+                memory.Description.Length > 50
+                    ? memory.Description[..50] + "..."
+                    : memory.Description);
+        }
+
+        AnsiConsole.Write(table);
+        AnsiConsole.WriteLine();
+
+        AnsiConsole.MarkupLine("[dim]💡 使用 /memory show <name> 查看详情[/]");
+    }
+
+    /// <summary>
+    /// 混合搜索记忆
+    /// </summary>
+    private async Task HybridSearchMemoriesAsync(string query, CancellationToken ct)
+    {
+        AnsiConsole.MarkupLine($"[cyan]🔍 混合搜索（关键词 + 语义）:[/] {query}");
+        AnsiConsole.WriteLine();
+
+        var memories = await _memoryRetrievalService.HybridSearchAsync(
+            query,
+            topK: 5,
+            keywordWeight: 0.3,
+            semanticWeight: 0.7,
+            cancellationToken: ct);
+
+        if (memories.Count == 0)
+        {
+            AnsiConsole.MarkupLine("[yellow]✗ 未找到匹配的记忆[/]");
+            return;
+        }
+
+        AnsiConsole.MarkupLine($"[green]✓ 找到 {memories.Count} 个记忆（综合评分）[/]");
+        AnsiConsole.WriteLine();
+
+        // 显示记忆列表
+        var table = new Table()
+            .Border(TableBorder.Rounded)
+            .AddColumn("名称")
+            .AddColumn("类型")
+            .AddColumn("描述");
+
+        foreach (var memory in memories)
+        {
+            table.AddRow(
+                $"[cyan]{memory.Name}[/]",
+                $"[yellow]{memory.Type}[/]",
+                memory.Description.Length > 50
+                    ? memory.Description[..50] + "..."
+                    : memory.Description);
+        }
+
+        AnsiConsole.Write(table);
+        AnsiConsole.WriteLine();
+
+        AnsiConsole.MarkupLine("[dim]💡 混合搜索结合了关键词匹配和语义相似度[/]");
+    }
+
+    /// <summary>
+    /// 计算记忆重要性
+    /// </summary>
+    private async Task CalculateMemoryImportanceAsync(string name, CancellationToken ct)
+    {
+        AnsiConsole.MarkupLine($"[cyan]📊 正在计算记忆重要性:[/] {name}");
+        AnsiConsole.WriteLine();
+
+        // 获取记忆（需要先搜索）
+        var allMemories = await _memoryRepository.GetAllAsync(ct);
+        var memory = allMemories.FirstOrDefault(m => m.Name.Equals(name, StringComparison.OrdinalIgnoreCase));
+
+        if (memory == null)
+        {
+            AnsiConsole.MarkupLine($"[red]✗ 记忆 '{name}' 不存在[/]");
+            return;
+        }
+
+        // 计算重要性评分
+        var score = await _memoryRetrievalService.CalculateImportanceScoreAsync(memory, cancellationToken: ct);
+
+        // 显示评分
+        var scoreColor = score switch
+        {
+            >= 0.9 => "green",
+            >= 0.7 => "yellow",
+            >= 0.5 => "orange",
+            _ => "red"
+        };
+
+        var importance = score switch
+        {
+            >= 0.9 => "核心信息",
+            >= 0.7 => "重要信息",
+            >= 0.5 => "一般信息",
+            >= 0.3 => "次要信息",
+            _ => "低重要性"
+        };
+
+        var panel = new Panel(
+            new Markup($"[bold]记忆名称:[/] {memory.Name}\n" +
+                      $"[bold]类型:[/] [yellow]{memory.Type}[/]\n" +
+                      $"[bold]描述:[/] {memory.Description}\n" +
+                      $"[bold]重要性评分:[/] [{scoreColor}]{score:P0}[/]\n" +
+                      $"[bold]重要性等级:[/] [{scoreColor}]{importance}[/]"))
+        {
+            Header = new PanelHeader($"[cyan]重要性评估[/]"),
+            Border = BoxBorder.Rounded
+        };
+
+        AnsiConsole.Write(panel);
+        AnsiConsole.WriteLine();
+
+        // 评分说明
+        AnsiConsole.MarkupLine("[dim]评分标准：0.9+ 核心信息 | 0.7-0.8 重要 | 0.5-0.6 一般 | 0.3-0.4 次要 | < 0.3 低重要性[/]");
+    }
+
+    /// <summary>
     /// 显示记忆命令帮助
     /// </summary>
     private void ShowMemoryHelp()
@@ -1965,7 +2276,12 @@ public class AgentRepl
         table.AddRow("[cyan]/memory add <type> <name>[/]", "交互式创建新记忆");
         table.AddRow("[cyan]/memory update <name>[/]", "交互式更新记忆");
         table.AddRow("[cyan]/memory delete <name>[/]", "删除记忆");
-        table.AddRow("[cyan]/memory search <query>[/]", "搜索记忆");
+        table.AddRow("[cyan]/memory search <query>[/]", "搜索记忆（关键词）");
+        table.AddRow("[cyan]/memory extract <message>[/]", "从消息中提取记忆（LLM 驱动）");
+        table.AddRow("[cyan]/memory relevant <context>[/]", "获取相关记忆");
+        table.AddRow("[cyan]/memory semantic-search <query>[/]", "语义搜索");
+        table.AddRow("[cyan]/memory hybrid-search <query>[/]", "混合搜索（关键词+语义）");
+        table.AddRow("[cyan]/memory importance <name>[/]", "计算记忆重要性");
         table.AddRow("[cyan]/memory rebuild-index[/]", "重建记忆索引");
 
         AnsiConsole.MarkupLine("[bold yellow]记忆管理命令：[/]");
