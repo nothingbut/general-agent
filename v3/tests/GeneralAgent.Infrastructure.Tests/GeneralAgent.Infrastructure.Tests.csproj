@@ -14,6 +14,7 @@
     <PackageReference Include="coverlet.collector" />
     <PackageReference Include="Microsoft.NET.Test.Sdk" />
     <PackageReference Include="Microsoft.EntityFrameworkCore.Sqlite" />
+    <PackageReference Include="NSubstitute" />
   </ItemGroup>
 
   <ItemGroup>
@@ -23,6 +24,7 @@
   <ItemGroup>
     <ProjectReference Include="..\..\src\GeneralAgent.Core\GeneralAgent.Core.csproj" />
     <ProjectReference Include="..\..\src\GeneralAgent.Infrastructure\GeneralAgent.Infrastructure.csproj" />
+    <ProjectReference Include="..\..\src\GeneralAgent.Infrastructure.Compression\GeneralAgent.Infrastructure.Compression.csproj" />
   </ItemGroup>
 
 </Project>

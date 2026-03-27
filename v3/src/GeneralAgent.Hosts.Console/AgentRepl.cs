@@ -1,7 +1,7 @@
 using GeneralAgent.Application.Services;
 using GeneralAgent.Core.Abstractions;
 using GeneralAgent.Core.Models;
-// using GeneralAgent.Hosts.Console.Repl; // TODO: Phase 5/6 - not implemented yet
+using GeneralAgent.Hosts.Console.Repl;
 using GeneralAgent.Hosts.Console.Commands;
 using GeneralAgent.Hosts.Console.Services;
 using GeneralAgent.Infrastructure.LLM;
@@ -22,15 +22,15 @@ public class AgentRepl
     private readonly ConversationService _conversationService;
     private readonly IMessageRepository _messageRepository;
     private readonly SkillService _skillService;
+    private readonly ContextCompressionService _contextCompressionService;
     private readonly SearchCommand _searchCommand;
     private readonly TagCommand _tagCommand;
     private readonly LLMOptions _llmOptions;
     private readonly ILogger<AgentRepl> _logger;
-    // TODO: Phase 5/6 - not implemented yet
-    // private readonly ReplHistoryManager _historyManager;
-    // private readonly AutoCompletionHandler _completionHandler;
-    // private readonly MultiLineInputHandler _multiLineHandler;
-    // private readonly AliasManager _aliasManager;
+    private readonly ReplHistoryManager _historyManager;
+    private readonly AutoCompletionHandler _completionHandler;
+    private readonly MultiLineInputHandler _multiLineHandler;
+    private readonly AliasManager _aliasManager;
 
     private Guid _currentSessionId = Guid.Empty;
     private string _currentProvider = string.Empty;
@@ -40,6 +40,7 @@ public class AgentRepl
         ConversationService conversationService,
         IMessageRepository messageRepository,
         SkillService skillService,
+        ContextCompressionService contextCompressionService,
         SearchCommand searchCommand,
         TagCommand tagCommand,
         IOptions<LLMOptions> llmOptions,
@@ -49,35 +50,29 @@ public class AgentRepl
         _conversationService = conversationService;
         _messageRepository = messageRepository;
         _skillService = skillService;
+        _contextCompressionService = contextCompressionService;
         _searchCommand = searchCommand;
         _tagCommand = tagCommand;
         _llmOptions = llmOptions.Value;
         _logger = logger;
 
-        // TODO: Phase 5/6 - not implemented yet
-        // // 初始化历史管理器
-        // var homeDir = Environment.GetFolderPath(Environment.SpecialFolder.UserProfile);
-        // var agentDir = Path.Combine(homeDir, ".agent");
-        // var historyPath = Path.Combine(agentDir, "repl_history.txt");
-        // var historyLogger = logger as ILogger<ReplHistoryManager>;
-        // _historyManager = new ReplHistoryManager(historyPath, logger: historyLogger);
+        // 初始化 REPL 组件
+        var homeDir = Environment.GetFolderPath(Environment.SpecialFolder.UserProfile);
+        var agentDir = Path.Combine(homeDir, ".agent");
 
-        // // 初始化自动补全处理器
-        // var completionLogger = logger as ILogger<AutoCompletionHandler>;
-        // _completionHandler = new AutoCompletionHandler(sessionService, skillService, completionLogger ?? Microsoft.Extensions.Logging.Abstractions.NullLogger<AutoCompletionHandler>.Instance);
+        // 初始化历史管理器
+        var historyPath = Path.Combine(agentDir, "repl_history.txt");
+        _historyManager = new ReplHistoryManager(historyPath, logger: logger);
 
-        // // 初始化多行输入处理器
-        // var multiLineLogger = logger as ILogger<MultiLineInputHandler>;
-        // _multiLineHandler = new MultiLineInputHandler(multiLineLogger);
+        // 初始化自动补全处理器
+        _completionHandler = new AutoCompletionHandler(sessionService, skillService, logger);
 
-        // // 初始化搜索服务
-        // var searchLogger = logger as ILogger<SearchService>;
-        // _searchService = new SearchService(sessionService, messageRepository, skillService, searchLogger ?? Microsoft.Extensions.Logging.Abstractions.NullLogger<SearchService>.Instance);
+        // 初始化多行输入处理器
+        _multiLineHandler = new MultiLineInputHandler(logger);
 
-        // // 初始化别名管理器
-        // var aliasPath = Path.Combine(agentDir, "aliases.json");
-        // var aliasLogger = logger as ILogger<AliasManager>;
-        // _aliasManager = new AliasManager(aliasPath, aliasLogger);
+        // 初始化别名管理器
+        var aliasPath = Path.Combine(agentDir, "aliases.json");
+        _aliasManager = new AliasManager(aliasPath, logger);
     }
 
     /// <summary>
@@ -88,20 +83,19 @@ public class AgentRepl
         // 初始化提供商
         _currentProvider = _llmOptions.DefaultProvider;
 
-        // TODO: Phase 5/6 - not implemented yet
-        // // 加载历史记录
-        // var history = _historyManager.LoadHistory();
-        // ReadLine.HistoryEnabled = true;
-        // foreach (var item in history)
-        // {
-        //     ReadLine.AddHistory(item);
-        // }
+        // 加载历史记录
+        var history = _historyManager.LoadHistory();
+        ReadLine.HistoryEnabled = true;
+        foreach (var item in history)
+        {
+            ReadLine.AddHistory(item);
+        }
 
-        // _logger.LogInformation("已加载 {Count} 条历史记录", history.Count);
+        _logger.LogInformation("已加载 {Count} 条历史记录", history.Count);
 
-        // // 设置自动补全处理器
-        // ReadLine.AutoCompletionHandler = _completionHandler;
-        // _logger.LogInformation("已启用自动补全功能");
+        // 设置自动补全处理器
+        ReadLine.AutoCompletionHandler = _completionHandler;
+        _logger.LogInformation("已启用自动补全功能");
 
         // 显示欢迎信息
         DisplayWelcome();
@@ -117,17 +111,22 @@ public class AgentRepl
                 // 使用 ReadLine 获取初始输入（支持历史和自动补全）
                 var initialInput = ReadLine.Read("You> ");
 
+                // 处理 Ctrl+D (EOF)
+                if (initialInput == null)
+                {
+                    AnsiConsole.WriteLine();
+                    AnsiConsole.MarkupLine("[green]✓ 检测到 Ctrl+D，退出 REPL[/]");
+                    break;
+                }
+
                 // 处理空输入
                 if (string.IsNullOrWhiteSpace(initialInput))
                 {
                     continue;
                 }
 
-                // TODO: Phase 5/6 - not implemented yet
-                // // 处理多行输入（如果检测到多行标记）
-                // var input = _multiLineHandler.ProcessInput(initialInput, prompt => ReadLine.Read(prompt));
-
-                var input = initialInput; // Simple fallback for now
+                // 处理多行输入（如果检测到多行标记）
+                var input = _multiLineHandler.ProcessInput(initialInput, prompt => ReadLine.Read(prompt));
 
                 // 处理空输入（多行输入可能为空）
                 if (string.IsNullOrWhiteSpace(input))
@@ -135,24 +134,21 @@ public class AgentRepl
                     continue;
                 }
 
-                // TODO: Phase 5/6 - not implemented yet
-                // // 添加到历史
-                // _historyManager.AddHistoryItem(initialInput); // 只添加初始输入，不添加完整多行内容
+                // 添加到历史
+                _historyManager.AddHistoryItem(initialInput); // 只添加初始输入，不添加完整多行内容
 
-                // // 显示多行输入统计（如果是多行）
-                // if (_multiLineHandler.IsMultiLineStart(initialInput))
-                // {
-                //     var stats = _multiLineHandler.GetInputStats(input);
-                //     AnsiConsole.MarkupLine($"[dim]→ 已接收多行输入: {stats.Format()}[/]");
-                // }
+                // 显示多行输入统计（如果是多行）
+                if (_multiLineHandler.IsMultiLineStart(initialInput))
+                {
+                    var stats = _multiLineHandler.GetInputStats(input);
+                    AnsiConsole.MarkupLine($"[dim]→ 已接收多行输入: {stats.Format()}[/]");
+                }
 
                 // 处理命令
                 if (initialInput.StartsWith('/'))
                 {
-                    // TODO: Phase 5/6 - not implemented yet
-                    // // 解析别名
-                    // var resolvedInput = _aliasManager.ResolveAlias(initialInput);
-                    var resolvedInput = initialInput; // Simple fallback for now
+                    // 解析别名
+                    var resolvedInput = _aliasManager.ResolveAlias(initialInput);
                     var shouldExit = await HandleCommandAsync(resolvedInput);
                     if (shouldExit)
                     {
@@ -168,6 +164,7 @@ public class AgentRepl
             {
                 _logger.LogError(ex, "REPL 循环发生错误");
                 AnsiConsole.MarkupLine($"[red]✗ 错误: {ex.Message}[/]");
+                AnsiConsole.MarkupLine("[dim]💡 提示: REPL 将继续运行，你可以重试或使用 /help 查看帮助[/]");
             }
         }
 
@@ -184,7 +181,7 @@ public class AgentRepl
             new Markup("[bold yellow]General Agent V3 - Console REPL[/]\n\n" +
                       $"当前提供商: [cyan]{_currentProvider}[/]\n\n" +
                       "输入 [bold]/help[/] 查看可用命令\n" +
-                      "[dim]快捷键: ↑↓ 浏览历史 | Tab 自动补全 | Ctrl+C 取消输入[/]"))
+                      "[dim]快捷键: ↑↓ 浏览历史 | Tab 自动补全 | Ctrl+C 取消输入 | Ctrl+D 退出[/]"))
         {
             Border = BoxBorder.Double,
             Padding = new Padding(2, 1)
@@ -269,9 +266,11 @@ public class AgentRepl
                 return false;
 
             case "alias":
-                // TODO: Phase 5/6 - not implemented yet
-                AnsiConsole.MarkupLine("[yellow]⚠ 别名功能尚未实现[/]");
-                // HandleAliasCommand(args);
+                HandleAliasCommand(args);
+                return false;
+
+            case "context":
+                await HandleContextCommandAsync(args);
                 return false;
 
             default:
@@ -364,6 +363,14 @@ public class AgentRepl
         table.AddRow("[cyan]/alias add <别名> <命令>[/]", "添加别名");
         table.AddRow("[cyan]/alias remove <别名>[/]", "移除别名");
 
+        // 上下文压缩
+        table.AddRow("", "");
+        table.AddRow("[bold yellow]上下文压缩[/] [green](V3 Phase 6 新增)[/]", "");
+        table.AddRow("[cyan]/context status[/]", "查看当前上下文状态");
+        table.AddRow("[cyan]/context compress [[strategy]][/]", "手动压缩上下文");
+        table.AddRow("[cyan]/context config[/]", "查看/修改压缩配置");
+        table.AddRow("[cyan]/context history[[limit]][/]", "查看压缩历史");
+
         // 其他
         table.AddRow("", "");
         table.AddRow("[bold yellow]其他[/]", "");
@@ -380,8 +387,9 @@ public class AgentRepl
                       "[cyan]↑/↓[/] - 浏览命令历史\n" +
                       "[cyan]Tab[/] - 自动补全命令和会话 ID\n" +
                       "[cyan]Ctrl+C[/] - 取消当前输入\n" +
-                      "[cyan]Ctrl+L[/] - 清屏（或使用 /clear）\n" +
-                      "[cyan]>>>[/] - 开始多行输入（以单独的 >>> 结束）"))
+                      "[cyan]Ctrl+D[/] - 退出 REPL（或使用 /exit）\n" +
+                      "[cyan]/clear[/] - 清屏\n" +
+                      "[cyan]\"\"\"[/] - 开始多行输入（以单独的 \"\"\" 结束）"))
         {
             Header = new PanelHeader("[yellow]快捷键[/]"),
             Border = BoxBorder.Rounded
@@ -395,8 +403,8 @@ public class AgentRepl
     private void ShowCurrentProvider()
     {
         var availableProviders = string.Join(", ", _llmOptions.Providers.Keys);
-        AnsiConsole.MarkupLine($"当前提供商: [cyan]{_currentProvider}[/]");
-        AnsiConsole.MarkupLine($"可用提供商: [dim]{availableProviders}[/]");
+        AnsiConsole.MarkupLine($"[blue]ℹ[/] 当前提供商: [cyan]{_currentProvider}[/]");
+        AnsiConsole.MarkupLine($"[dim]  可用提供商: {availableProviders}[/]");
     }
 
     /// <summary>
@@ -604,8 +612,8 @@ public class AgentRepl
             // 切换会话
             _currentSessionId = sessionId;
             AnsiConsole.MarkupLine($"[green]✓ 已切换到会话: {session.Title}[/]");
-            AnsiConsole.MarkupLine($"  ID: [cyan]{session.Id.ToString()[..8]}...[/]");
-            AnsiConsole.MarkupLine($"  创建时间: {session.CreatedAt:yyyy-MM-dd HH:mm:ss}");
+            AnsiConsole.MarkupLine($"  [dim]ID: [cyan]{session.Id.ToString()[..8]}...[/][/]");
+            AnsiConsole.MarkupLine($"  [dim]创建时间: {session.CreatedAt:yyyy-MM-dd HH:mm:ss}[/]");
         }
         catch (Exception ex)
         {
@@ -659,7 +667,7 @@ public class AgentRepl
 
                     if (matchingSessions.Count > 1)
                     {
-                        AnsiConsole.MarkupLine($"[yellow]找到多个匹配的会话，请使用更长的 ID[/]");
+                        AnsiConsole.MarkupLine($"[yellow]⚠ 找到多个匹配的会话，请使用更长的 ID[/]");
                         return;
                     }
 
@@ -906,95 +914,92 @@ public class AgentRepl
     /// </summary>
     private void HandleAliasCommand(string[] args)
     {
-        // TODO: Phase 5/6 - not implemented yet
-        AnsiConsole.MarkupLine("[yellow]⚠ 别名功能尚未实现[/]");
+        if (args.Length == 0)
+        {
+            // 显示所有别名
+            var aliases = _aliasManager.GetAllAliases();
+            if (aliases.Count == 0)
+            {
+                AnsiConsole.MarkupLine("[yellow]⚠ 没有配置任何别名[/]");
+                return;
+            }
 
-        // if (args.Length == 0)
-        // {
-        //     // 显示所有别名
-        //     var aliases = _aliasManager.GetAllAliases();
-        //     if (aliases.Count == 0)
-        //     {
-        //         AnsiConsole.MarkupLine("[yellow]⚠ 没有配置任何别名[/]");
-        //         return;
-        //     }
+            var table = new Table()
+                .Border(TableBorder.Rounded)
+                .AddColumn("别名")
+                .AddColumn("命令");
 
-        //     var table = new Table()
-        //         .Border(TableBorder.Rounded)
-        //         .AddColumn("别名")
-        //         .AddColumn("命令");
+            foreach (var (alias, command) in aliases.OrderBy(x => x.Key))
+            {
+                table.AddRow($"[cyan]{alias}[/]", command);
+            }
 
-        //     foreach (var (alias, command) in aliases.OrderBy(x => x.Key))
-        //     {
-        //         table.AddRow($"[cyan]{alias}[/]", command);
-        //     }
+            AnsiConsole.MarkupLine($"[bold]已配置 {aliases.Count} 个别名：[/]");
+            AnsiConsole.Write(table);
+            AnsiConsole.MarkupLine("\n[dim]💡 提示: 使用 /alias add <别名> <命令> 添加新别名[/]");
+            return;
+        }
 
-        //     AnsiConsole.MarkupLine($"[bold]已配置 {aliases.Count} 个别名：[/]");
-        //     AnsiConsole.Write(table);
-        //     AnsiConsole.MarkupLine("\n[dim]💡 提示: 使用 /alias add <别名> <命令> 添加新别名[/]");
-        //     return;
-        // }
+        var subCommand = args[0].ToLower();
 
-        // var subCommand = args[0].ToLower();
+        try
+        {
+            switch (subCommand)
+            {
+                case "list":
+                    // 递归调用自己显示列表
+                    HandleAliasCommand(Array.Empty<string>());
+                    break;
 
-        // try
-        // {
-        //     switch (subCommand)
-        //     {
-        //         case "list":
-        //             // 递归调用自己显示列表
-        //             HandleAliasCommand(Array.Empty<string>());
-        //             break;
+                case "add":
+                    if (args.Length < 3)
+                    {
+                        AnsiConsole.MarkupLine("[red]✗ 用法: /alias add <别名> <命令>[/]");
+                        AnsiConsole.MarkupLine("[dim]示例: /alias add n new[/]");
+                        return;
+                    }
 
-        //         case "add":
-        //             if (args.Length < 3)
-        //             {
-        //                 AnsiConsole.MarkupLine("[red]✗ 用法: /alias add <别名> <命令>[/]");
-        //                 AnsiConsole.MarkupLine("[dim]示例: /alias add n new[/]");
-        //                 return;
-        //             }
+                    var newAlias = args[1];
+                    var newCommand = args[2];
 
-        //             var newAlias = args[1];
-        //             var newCommand = args[2];
+                    _aliasManager.AddAlias(newAlias, newCommand);
+                    _aliasManager.SaveAliases();
+                    AnsiConsole.MarkupLine($"[green]✓ 已添加别名: {newAlias} -> {newCommand}[/]");
+                    break;
 
-        //             _aliasManager.AddAlias(newAlias, newCommand);
-        //             _aliasManager.SaveAliases();
-        //             AnsiConsole.MarkupLine($"[green]✓ 已添加别名: {newAlias} -> {newCommand}[/]");
-        //             break;
+                case "remove":
+                case "delete":
+                case "rm":
+                    if (args.Length < 2)
+                    {
+                        AnsiConsole.MarkupLine("[red]✗ 用法: /alias remove <别名>[/]");
+                        AnsiConsole.MarkupLine("[dim]示例: /alias remove n[/]");
+                        return;
+                    }
 
-        //         case "remove":
-        //         case "delete":
-        //         case "rm":
-        //             if (args.Length < 2)
-        //             {
-        //                 AnsiConsole.MarkupLine("[red]✗ 用法: /alias remove <别名>[/]");
-        //                 AnsiConsole.MarkupLine("[dim]示例: /alias remove n[/]");
-        //                 return;
-        //             }
+                    var aliasToRemove = args[1];
+                    if (_aliasManager.RemoveAlias(aliasToRemove))
+                    {
+                        _aliasManager.SaveAliases();
+                        AnsiConsole.MarkupLine($"[green]✓ 已移除别名: {aliasToRemove}[/]");
+                    }
+                    else
+                    {
+                        AnsiConsole.MarkupLine($"[yellow]⚠ 别名不存在: {aliasToRemove}[/]");
+                    }
+                    break;
 
-        //             var aliasToRemove = args[1];
-        //             if (_aliasManager.RemoveAlias(aliasToRemove))
-        //             {
-        //                 _aliasManager.SaveAliases();
-        //                 AnsiConsole.MarkupLine($"[green]✓ 已移除别名: {aliasToRemove}[/]");
-        //             }
-        //             else
-        //             {
-        //                 AnsiConsole.MarkupLine($"[yellow]⚠ 别名不存在: {aliasToRemove}[/]");
-        //             }
-        //             break;
-
-        //         default:
-        //             AnsiConsole.MarkupLine($"[red]✗ 未知子命令: {subCommand}[/]");
-        //             AnsiConsole.MarkupLine("[dim]💡 提示: 可用命令: list, add, remove[/]");
-        //             break;
-        //     }
-        // }
-        // catch (Exception ex)
-        // {
-        //     _logger.LogError(ex, "处理别名命令失败");
-        //     AnsiConsole.MarkupLine($"[red]✗ 错误: {ex.Message}[/]");
-        // }
+                default:
+                    AnsiConsole.MarkupLine($"[red]✗ 未知子命令: {subCommand}[/]");
+                    AnsiConsole.MarkupLine("[dim]💡 提示: 可用命令: list, add, remove[/]");
+                    break;
+            }
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "处理别名命令失败");
+            AnsiConsole.MarkupLine($"[red]✗ 错误: {ex.Message}[/]");
+        }
     }
 
     /// <summary>
@@ -1148,6 +1153,323 @@ public class AgentRepl
                       "[cyan]/tag list[/]\n" +
                       "[cyan]/tag list --all[/]\n" +
                       "[cyan]/tag suggest[/]"))
+        {
+            Header = new PanelHeader("[yellow]示例[/]"),
+            Border = BoxBorder.Rounded
+        };
+        AnsiConsole.Write(examplePanel);
+    }
+
+    /// <summary>
+    /// 处理上下文压缩命令
+    /// </summary>
+    private async Task HandleContextCommandAsync(string[] args, CancellationToken ct = default)
+    {
+        if (_currentSessionId == Guid.Empty)
+        {
+            AnsiConsole.MarkupLine("[red]✗ 错误: 没有活动会话[/]");
+            return;
+        }
+
+        if (args.Length == 0)
+        {
+            ShowContextHelp();
+            return;
+        }
+
+        var subCommand = args[0].ToLower();
+
+        try
+        {
+            switch (subCommand)
+            {
+                case "status":
+                    await ShowContextStatusAsync(ct);
+                    break;
+
+                case "compress":
+                    var strategy = args.Length > 1 ? args[1] : null;
+                    await CompressContextAsync(strategy, ct);
+                    break;
+
+                case "config":
+                    await HandleContextConfigAsync(args.Skip(1).ToArray(), ct);
+                    break;
+
+                case "history":
+                    var limit = args.Length > 1 && int.TryParse(args[1], out var l) ? l : 10;
+                    await ShowCompressionHistoryAsync(limit, ct);
+                    break;
+
+                default:
+                    AnsiConsole.MarkupLine($"[red]✗ 未知子命令: {subCommand}[/]");
+                    ShowContextHelp();
+                    break;
+            }
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "处理上下文命令失败");
+            AnsiConsole.MarkupLine($"[red]✗ 错误: {ex.Message}[/]");
+        }
+    }
+
+    /// <summary>
+    /// 显示上下文状态
+    /// </summary>
+    private async Task ShowContextStatusAsync(CancellationToken ct = default)
+    {
+        var status = await _contextCompressionService.GetContextStatusAsync(_currentSessionId, ct);
+
+        var panel = new Panel(
+            new Markup($"[bold]会话 ID:[/] {_currentSessionId.ToString()[..8]}...\n" +
+                      $"[bold]消息数量:[/] [cyan]{status.MessageCount}[/] 条\n" +
+                      $"[bold]当前 Token 数:[/] [cyan]{status.CurrentTokens}[/] tokens\n" +
+                      $"[bold]压缩阈值:[/] {status.CompressionThreshold} tokens\n" +
+                      $"[bold]Token 使用率:[/] {FormatTokenUsageRatio(status.TokenUsageRatio)}\n" +
+                      $"[bold]自动压缩:[/] {(status.AutoCompressionEnabled ? "[green]已启用[/]" : "[red]已禁用[/]")}\n" +
+                      $"[bold]默认策略:[/] [yellow]{status.DefaultStrategy}[/]\n" +
+                      $"[bold]是否需要压缩:[/] {(status.ShouldCompress ? "[yellow]是[/]" : "[green]否[/]")}\n" +
+                      $"[bold]最后压缩时间:[/] {(status.LastCompressionAt.HasValue ? status.LastCompressionAt.Value.ToLocalTime().ToString("yyyy-MM-dd HH:mm:ss") : "[dim]从未压缩[/]")}"))
+        {
+            Header = new PanelHeader("[yellow]上下文状态[/]"),
+            Border = BoxBorder.Rounded
+        };
+
+        AnsiConsole.Write(panel);
+
+        if (status.ShouldCompress)
+        {
+            AnsiConsole.MarkupLine("\n[yellow]⚠ 提示: 上下文已达到压缩阈值，建议使用 /context compress 进行压缩[/]");
+        }
+    }
+
+    /// <summary>
+    /// 格式化 Token 使用率
+    /// </summary>
+    private string FormatTokenUsageRatio(double ratio)
+    {
+        var percentage = (int)(ratio * 100);
+        var color = percentage >= 100 ? "red" :
+                   percentage >= 80 ? "yellow" :
+                   percentage >= 60 ? "cyan" : "green";
+
+        var bar = new string('█', Math.Min(percentage / 5, 20));
+        var empty = new string('░', Math.Max(0, 20 - percentage / 5));
+
+        return $"[{color}]{percentage}%[/] [{color}]{bar}[/][dim]{empty}[/]";
+    }
+
+    /// <summary>
+    /// 压缩上下文
+    /// </summary>
+    private async Task CompressContextAsync(string? strategy, CancellationToken ct = default)
+    {
+        AnsiConsole.MarkupLine("[yellow]⏳ 正在压缩上下文...[/]");
+
+        var result = await _contextCompressionService.CompressSessionMessagesAsync(
+            _currentSessionId,
+            strategy,
+            ct);
+
+        if (result.Success)
+        {
+            var stats = result.Stats;
+
+            var table = new Table()
+                .Border(TableBorder.Rounded)
+                .AddColumn("指标")
+                .AddColumn("值");
+
+            table.AddRow("使用策略", $"[yellow]{stats.StrategyUsed}[/]");
+            table.AddRow("原始消息数", $"{stats.OriginalMessageCount} 条");
+            table.AddRow("压缩后消息数", $"[cyan]{stats.CompressedMessageCount}[/] 条");
+            table.AddRow("原始 Token 数", $"{stats.OriginalTokens} tokens");
+            table.AddRow("压缩后 Token 数", $"[cyan]{stats.CompressedTokens}[/] tokens");
+            table.AddRow("压缩比率", $"[green]{stats.CompressionRatio:P2}[/]");
+            table.AddRow("节省 Token", $"[green]{stats.TokensSaved}[/] tokens");
+            table.AddRow("压缩耗时", $"{stats.DurationMs}ms");
+
+            AnsiConsole.MarkupLine("[green]✓ 压缩成功[/]");
+            AnsiConsole.Write(table);
+        }
+        else
+        {
+            AnsiConsole.MarkupLine($"[red]✗ 压缩失败: {result.ErrorMessage}[/]");
+        }
+    }
+
+    /// <summary>
+    /// 处理配置子命令
+    /// </summary>
+    private async Task HandleContextConfigAsync(string[] args, CancellationToken ct = default)
+    {
+        if (args.Length == 0)
+        {
+            // 显示当前配置
+            var config = await _contextCompressionService.GetOrCreateConfigAsync(_currentSessionId, ct);
+
+            var table = new Table()
+                .Border(TableBorder.Rounded)
+                .AddColumn("配置项")
+                .AddColumn("当前值");
+
+            table.AddRow("自动压缩", config.AutoCompressionEnabled ? "[green]已启用[/]" : "[red]已禁用[/]");
+            table.AddRow("压缩阈值", $"{config.AutoCompressionThreshold} tokens");
+            table.AddRow("默认策略", $"[yellow]{config.DefaultStrategy}[/]");
+
+            AnsiConsole.MarkupLine("[bold]当前压缩配置：[/]");
+            AnsiConsole.Write(table);
+            AnsiConsole.MarkupLine("\n[dim]💡 提示: 使用 /context config <key> <value> 修改配置[/]");
+            AnsiConsole.MarkupLine("[dim]可用配置项: auto-enabled, threshold, strategy[/]");
+            return;
+        }
+
+        var configKey = args[0].ToLower();
+        var configValue = args.Length > 1 ? args[1] : null;
+
+        if (configValue == null)
+        {
+            AnsiConsole.MarkupLine("[red]✗ 用法: /context config <key> <value>[/]");
+            AnsiConsole.MarkupLine("[dim]示例: /context config threshold 2500[/]");
+            return;
+        }
+
+        switch (configKey)
+        {
+            case "auto-enabled":
+            case "auto":
+                if (bool.TryParse(configValue, out var enabled))
+                {
+                    await _contextCompressionService.UpdateCompressionConfigAsync(
+                        _currentSessionId,
+                        autoCompressionEnabled: enabled,
+                        cancellationToken: ct);
+                    AnsiConsole.MarkupLine($"[green]✓ 已{(enabled ? "启用" : "禁用")}自动压缩[/]");
+                }
+                else
+                {
+                    AnsiConsole.MarkupLine("[red]✗ 无效的布尔值，请使用 true 或 false[/]");
+                }
+                break;
+
+            case "threshold":
+                if (int.TryParse(configValue, out var threshold) && threshold > 0)
+                {
+                    await _contextCompressionService.UpdateCompressionConfigAsync(
+                        _currentSessionId,
+                        autoCompressionThreshold: threshold,
+                        cancellationToken: ct);
+                    AnsiConsole.MarkupLine($"[green]✓ 已设置压缩阈值为 {threshold} tokens[/]");
+                }
+                else
+                {
+                    AnsiConsole.MarkupLine("[red]✗ 无效的阈值，请输入正整数[/]");
+                }
+                break;
+
+            case "strategy":
+                await _contextCompressionService.UpdateCompressionConfigAsync(
+                    _currentSessionId,
+                    defaultStrategy: configValue,
+                    cancellationToken: ct);
+                AnsiConsole.MarkupLine($"[green]✓ 已设置默认策略为 {configValue}[/]");
+                break;
+
+            default:
+                AnsiConsole.MarkupLine($"[red]✗ 未知配置项: {configKey}[/]");
+                AnsiConsole.MarkupLine("[dim]可用配置项: auto-enabled, threshold, strategy[/]");
+                break;
+        }
+    }
+
+    /// <summary>
+    /// 显示压缩历史
+    /// </summary>
+    private async Task ShowCompressionHistoryAsync(int limit, CancellationToken ct = default)
+    {
+        var histories = await _contextCompressionService.GetCompressionHistoryAsync(_currentSessionId, limit, ct);
+
+        if (histories.Count == 0)
+        {
+            AnsiConsole.MarkupLine("[yellow]⚠ 该会话没有压缩历史记录[/]");
+            return;
+        }
+
+        var table = new Table()
+            .Border(TableBorder.Rounded)
+            .AddColumn("时间")
+            .AddColumn("策略")
+            .AddColumn("原始/压缩")
+            .AddColumn("Token 节省")
+            .AddColumn("压缩比率")
+            .AddColumn("耗时");
+
+        foreach (var h in histories)
+        {
+            table.AddRow(
+                h.CompressedAt.ToLocalTime().ToString("MM-dd HH:mm"),
+                $"[yellow]{h.StrategyUsed}[/]",
+                $"{h.OriginalMessageCount}→{h.CompressedMessageCount}",
+                $"[green]{h.OriginalTokens - h.CompressedTokens}[/]",
+                $"{h.CompressionRatio:P0}",
+                $"{h.DurationMs}ms"
+            );
+        }
+
+        AnsiConsole.MarkupLine($"[bold]压缩历史（最近 {histories.Count} 条）：[/]");
+        AnsiConsole.Write(table);
+
+        // 显示统计汇总
+        var stats = await _contextCompressionService.GetCompressionStatsAsync(_currentSessionId, ct);
+        AnsiConsole.MarkupLine(
+            $"\n[dim]总计: {stats.TotalCompressions} 次压缩，平均压缩比率 {stats.AverageCompressionRatio:P2}，" +
+            $"累计节省 {stats.TotalTokensSaved} tokens，最常用策略: {stats.MostUsedStrategy}[/]");
+    }
+
+    /// <summary>
+    /// 显示上下文命令帮助
+    /// </summary>
+    private void ShowContextHelp()
+    {
+        var table = new Table()
+            .Border(TableBorder.Rounded)
+            .AddColumn("命令")
+            .AddColumn("说明");
+
+        table.AddRow("[cyan]/context status[/]", "查看当前会话的上下文状态");
+        table.AddRow("[cyan]/context compress [[strategy]][/]", "手动压缩上下文（可选指定策略）");
+        table.AddRow("[cyan]/context config[/]", "查看压缩配置");
+        table.AddRow("[cyan]/context config <key> <value>[/]", "修改压缩配置");
+        table.AddRow("[cyan]/context history [[limit]][/]", "查看压缩历史记录（默认 10 条）");
+
+        AnsiConsole.MarkupLine("[bold yellow]上下文压缩命令：[/]");
+        AnsiConsole.Write(table);
+        AnsiConsole.WriteLine();
+
+        // 可用策略
+        var strategyPanel = new Panel(
+            new Markup("[bold]可用压缩策略：[/]\n" +
+                      "[yellow]sliding_window[/] - 滑动窗口（保留最近 N 条消息）\n" +
+                      "[yellow]hierarchical[/] - 层级压缩（近期详细 + 中期关键点 + 旧消息摘要）\n" +
+                      "[yellow]semantic[/] - 语义压缩（使用 LLM 生成摘要）"))
+        {
+            Header = new PanelHeader("[yellow]压缩策略[/]"),
+            Border = BoxBorder.Rounded
+        };
+        AnsiConsole.Write(strategyPanel);
+
+        AnsiConsole.WriteLine();
+
+        // 示例
+        var examplePanel = new Panel(
+            new Markup("[bold]示例：[/]\n" +
+                      "[cyan]/context status[/] - 查看上下文状态\n" +
+                      "[cyan]/context compress[/] - 使用默认策略压缩\n" +
+                      "[cyan]/context compress hierarchical[/] - 使用层级策略压缩\n" +
+                      "[cyan]/context config threshold 2500[/] - 设置压缩阈值为 2500 tokens\n" +
+                      "[cyan]/context config auto-enabled true[/] - 启用自动压缩\n" +
+                      "[cyan]/context history 20[/] - 查看最近 20 条压缩历史"))
         {
             Header = new PanelHeader("[yellow]示例[/]"),
             Border = BoxBorder.Rounded

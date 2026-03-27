@@ -1,4 +1,5 @@
 using GeneralAgent.Core.Models;
+using GeneralAgent.Infrastructure.Compression.Models;
 using Microsoft.EntityFrameworkCore;
 
 namespace GeneralAgent.Infrastructure.Storage;
@@ -27,6 +28,16 @@ public sealed class AgentDbContext : DbContext
     /// 会话标签集合
     /// </summary>
     public DbSet<SessionTag> SessionTags => Set<SessionTag>();
+
+    /// <summary>
+    /// 压缩历史记录集合
+    /// </summary>
+    public DbSet<CompressionHistory> CompressionHistories => Set<CompressionHistory>();
+
+    /// <summary>
+    /// 压缩配置集合
+    /// </summary>
+    public DbSet<CompressionConfig> CompressionConfigs => Set<CompressionConfig>();
 
     protected override void OnModelCreating(ModelBuilder modelBuilder)
     {

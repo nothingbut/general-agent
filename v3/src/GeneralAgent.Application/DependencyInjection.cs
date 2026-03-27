@@ -42,6 +42,9 @@ public static class ApplicationDependencyInjection
         // 注册自然语言查询服务
         services.AddScoped<NaturalLanguageQueryService>();
 
+        // 注册上下文压缩服务
+        services.AddScoped<ContextCompressionService>();
+
         return services;
     }
 }

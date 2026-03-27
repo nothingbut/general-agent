@@ -1,4 +1,5 @@
 using GeneralAgent.Core.Abstractions;
+using GeneralAgent.Infrastructure.Compression.Services;
 using GeneralAgent.Infrastructure.Storage;
 using GeneralAgent.Infrastructure.Storage.Repositories;
 using Microsoft.EntityFrameworkCore;
@@ -28,6 +29,8 @@ public static class DependencyInjection
         // 注册 Repositories
         services.AddScoped<ISessionRepository, SessionRepository>();
         services.AddScoped<IMessageRepository, MessageRepository>();
+        services.AddScoped<ICompressionHistoryRepository, CompressionHistoryRepository>();
+        services.AddScoped<ICompressionConfigRepository, CompressionConfigRepository>();
 
         return services;
     }

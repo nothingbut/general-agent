@@ -8,6 +8,7 @@
 
   <ItemGroup>
     <ProjectReference Include="..\GeneralAgent.Core\GeneralAgent.Core.csproj" />
+    <ProjectReference Include="..\GeneralAgent.Infrastructure.Compression\GeneralAgent.Infrastructure.Compression.csproj" />
   </ItemGroup>
 
   <PropertyGroup>

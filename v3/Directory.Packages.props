@@ -35,5 +35,7 @@
     <!-- Skills System -->
     <PackageVersion Include="YamlDotNet" Version="15.3.0" />
     <PackageVersion Include="Scriban" Version="7.0.3" />
+    <!-- Compression -->
+    <PackageVersion Include="SharpToken" Version="2.0.3" />
   </ItemGroup>
 </Project>
