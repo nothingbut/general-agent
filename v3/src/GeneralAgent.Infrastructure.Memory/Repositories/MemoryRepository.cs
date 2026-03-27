@@ -1,25 +1,24 @@
 using GeneralAgent.Core.Abstractions;
+using GeneralAgent.Core.Models;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Options;
 using System.Text;
 using System.Text.Json;
-using CoreCoreMemory = GeneralAgent.Core.Models.CoreMemory;
-using CoreCoreCoreMemoryType = GeneralAgent.Core.Models.CoreCoreMemoryType;
 
-namespace GeneralAgent.Infrastructure.CoreMemory.Repositories;
+namespace GeneralAgent.Infrastructure.Memory.Repositories;
 
 /// <summary>
 /// 基于文件系统的记忆仓储实现
 /// </summary>
-public class CoreMemoryRepository : ICoreMemoryRepository
+public class MemoryRepository : IMemoryRepository
 {
-    private readonly CoreMemoryOptions _options;
-    private readonly ILogger<CoreMemoryRepository> _logger;
+    private readonly MemoryOptions _options;
+    private readonly ILogger<MemoryRepository> _logger;
     private readonly string _rootPath;
 
-    public CoreMemoryRepository(
-        IOptions<CoreMemoryOptions> options,
-        ILogger<CoreMemoryRepository> logger)
+    public MemoryRepository(
+        IOptions<MemoryOptions> options,
+        ILogger<MemoryRepository> logger)
     {
         _options = options.Value;
         _logger = logger;
@@ -29,7 +28,7 @@ public class CoreMemoryRepository : ICoreMemoryRepository
         EnsureDirectoriesExist();
     }
 
-    public async Task<CoreMemory> SaveAsync(CoreMemory memory, CancellationToken cancellationToken = default)
+    public async Task<Core.Models.Memory> SaveAsync(Core.Models.Memory memory, CancellationToken cancellationToken = default)
     {
         var filePath = GetFullPath(memory.FilePath);
         var directory = Path.GetDirectoryName(filePath)!;
@@ -42,7 +41,7 @@ public class CoreMemoryRepository : ICoreMemoryRepository
         }
 
         // 生成文件内容（带 frontmatter）
-        var content = GenerateCoreMemoryFileContent(memory);
+        var content = GenerateMemoryFileContent(memory);
 
         // 写入文件
         await File.WriteAllTextAsync(filePath, content, Encoding.UTF8, cancellationToken);
@@ -54,15 +53,15 @@ public class CoreMemoryRepository : ICoreMemoryRepository
         return memory;
     }
 
-    public async Task<CoreMemory?> GetByIdAsync(Guid id, CancellationToken cancellationToken = default)
+    public async Task<Core.Models.Memory?> GetByIdAsync(Guid id, CancellationToken cancellationToken = default)
     {
         var allMemories = await GetAllAsync(cancellationToken);
         return allMemories.FirstOrDefault(m => m.Id == id);
     }
 
-    public async Task<CoreMemory?> GetByNameAsync(
+    public async Task<Core.Models.Memory?> GetByNameAsync(
         string name,
-        CoreCoreMemoryType type,
+        MemoryType type,
         CancellationToken cancellationToken = default)
     {
         var filePath = GetFullPath($"{type.ToString().ToLower()}/{name}.md");
@@ -72,14 +71,14 @@ public class CoreMemoryRepository : ICoreMemoryRepository
             return null;
         }
 
-        return await LoadCoreMemoryFromFileAsync(filePath, cancellationToken);
+        return await LoadMemoryFromFileAsync(filePath, cancellationToken);
     }
 
-    public async Task<List<CoreMemory>> GetAllAsync(CancellationToken cancellationToken = default)
+    public async Task<List<Core.Models.Memory>> GetAllAsync(CancellationToken cancellationToken = default)
     {
-        var memories = new List<CoreMemory>();
+        var memories = new List<Core.Models.Memory>();
 
-        foreach (CoreCoreMemoryType type in Enum.GetValues<CoreCoreMemoryType>())
+        foreach (MemoryType type in Enum.GetValues<MemoryType>())
         {
             var typeMemories = await GetByTypeAsync(type, cancellationToken);
             memories.AddRange(typeMemories);
@@ -88,25 +87,25 @@ public class CoreMemoryRepository : ICoreMemoryRepository
         return memories;
     }
 
-    public async Task<List<CoreMemory>> GetByTypeAsync(
-        CoreCoreMemoryType type,
+    public async Task<List<Core.Models.Memory>> GetByTypeAsync(
+        MemoryType type,
         CancellationToken cancellationToken = default)
     {
         var typePath = GetFullPath(type.ToString().ToLower());
 
         if (!Directory.Exists(typePath))
         {
-            return new List<CoreMemory>();
+            return new List<Core.Models.Memory>();
         }
 
         var files = Directory.GetFiles(typePath, "*.md", SearchOption.TopDirectoryOnly);
-        var memories = new List<CoreMemory>();
+        var memories = new List<Core.Models.Memory>();
 
         foreach (var file in files)
         {
             try
             {
-                var memory = await LoadCoreMemoryFromFileAsync(file, cancellationToken);
+                var memory = await LoadMemoryFromFileAsync(file, cancellationToken);
                 if (memory != null)
                 {
                     memories.Add(memory);
@@ -121,9 +120,9 @@ public class CoreMemoryRepository : ICoreMemoryRepository
         return memories;
     }
 
-    public async Task<List<CoreMemory>> SearchAsync(
+    public async Task<List<Core.Models.Memory>> SearchAsync(
         string keyword,
-        CoreCoreMemoryType? type = null,
+        MemoryType? type = null,
         CancellationToken cancellationToken = default)
     {
         var memories = type.HasValue
@@ -140,7 +139,7 @@ public class CoreMemoryRepository : ICoreMemoryRepository
         ).ToList();
     }
 
-    public async Task<List<CoreMemory>> SearchByTagsAsync(
+    public async Task<List<Core.Models.Memory>> SearchByTagsAsync(
         List<string> tags,
         CancellationToken cancellationToken = default)
     {
@@ -152,7 +151,7 @@ public class CoreMemoryRepository : ICoreMemoryRepository
         ).ToList();
     }
 
-    public async Task<CoreMemory> UpdateAsync(CoreMemory memory, CancellationToken cancellationToken = default)
+    public async Task<Core.Models.Memory> UpdateAsync(Core.Models.Memory memory, CancellationToken cancellationToken = default)
     {
         // 更新就是重新保存
         return await SaveAsync(memory, cancellationToken);
@@ -192,7 +191,7 @@ public class CoreMemoryRepository : ICoreMemoryRepository
 
     public async Task<bool> NameExistsAsync(
         string name,
-        CoreCoreMemoryType type,
+        MemoryType type,
         CancellationToken cancellationToken = default)
     {
         var memory = await GetByNameAsync(name, type, cancellationToken);
@@ -202,17 +201,17 @@ public class CoreMemoryRepository : ICoreMemoryRepository
     /// <summary>
     /// 从文件加载记忆
     /// </summary>
-    private async Task<CoreMemory?> LoadCoreMemoryFromFileAsync(string filePath, CancellationToken cancellationToken)
+    private async Task<Core.Models.Memory?> LoadMemoryFromFileAsync(string filePath, CancellationToken cancellationToken)
     {
         var content = await File.ReadAllTextAsync(filePath, cancellationToken);
-        return ParseCoreMemoryFromContent(content, filePath);
+        return ParseMemoryFromContent(content, filePath);
     }
 
     /// <summary>
     /// 解析记忆文件内容
     /// 格式：YAML frontmatter + Markdown content
     /// </summary>
-    private CoreMemory? ParseCoreMemoryFromContent(string fileContent, string filePath)
+    private Core.Models.Memory? ParseMemoryFromContent(string fileContent, string filePath)
     {
         // 简单的 frontmatter 解析（假设格式为 ---\n...metadata...\n---\ncontent）
         if (!fileContent.StartsWith("---"))
@@ -250,11 +249,11 @@ public class CoreMemoryRepository : ICoreMemoryRepository
         var contentStartIndex = frontmatterEnd + 1;
         var content = string.Join('\n', lines.Skip(contentStartIndex)).Trim();
 
-        // 构建 CoreMemory 对象
+        // 构建 Core.Models.Memory 对象
         try
         {
             var id = Guid.Parse(metadata.GetValueOrDefault("id", Guid.NewGuid().ToString()));
-            var type = Enum.Parse<CoreCoreMemoryType>(metadata.GetValueOrDefault("type", "Knowledge"), true);
+            var type = Enum.Parse<MemoryType>(metadata.GetValueOrDefault("type", "Knowledge"), true);
             var name = metadata.GetValueOrDefault("name", Path.GetFileNameWithoutExtension(filePath));
             var description = metadata.GetValueOrDefault("description", "");
             var tags = metadata.GetValueOrDefault("tags", "").Split(',', StringSplitOptions.RemoveEmptyEntries)
@@ -262,7 +261,7 @@ public class CoreMemoryRepository : ICoreMemoryRepository
             var createdAt = DateTime.Parse(metadata.GetValueOrDefault("created_at", DateTime.UtcNow.ToString("O")));
             var updatedAt = DateTime.Parse(metadata.GetValueOrDefault("updated_at", DateTime.UtcNow.ToString("O")));
 
-            return new CoreMemory
+            return new Core.Models.Memory
             {
                 Id = id,
                 Type = type,
@@ -284,7 +283,7 @@ public class CoreMemoryRepository : ICoreMemoryRepository
     /// <summary>
     /// 生成记忆文件内容（YAML frontmatter + Markdown）
     /// </summary>
-    private string GenerateCoreMemoryFileContent(CoreMemory memory)
+    private string GenerateMemoryFileContent(Core.Models.Memory memory)
     {
         var sb = new StringBuilder();
         sb.AppendLine("---");
@@ -318,7 +317,7 @@ public class CoreMemoryRepository : ICoreMemoryRepository
             _logger.LogInformation("创建记忆根目录: {Path}", _rootPath);
         }
 
-        foreach (CoreCoreMemoryType type in Enum.GetValues<CoreCoreMemoryType>())
+        foreach (MemoryType type in Enum.GetValues<MemoryType>())
         {
             var typePath = GetFullPath(type.ToString().ToLower());
             if (!Directory.Exists(typePath))

@@ -25,6 +25,8 @@ public class AgentRepl
     private readonly ContextCompressionService _contextCompressionService;
     private readonly SearchCommand _searchCommand;
     private readonly TagCommand _tagCommand;
+    private readonly IMemoryRepository _memoryRepository;
+    private readonly IMemoryIndexManager _memoryIndexManager;
     private readonly LLMOptions _llmOptions;
     private readonly ILogger<AgentRepl> _logger;
     private readonly ReplHistoryManager _historyManager;
@@ -43,6 +45,8 @@ public class AgentRepl
         ContextCompressionService contextCompressionService,
         SearchCommand searchCommand,
         TagCommand tagCommand,
+        IMemoryRepository memoryRepository,
+        IMemoryIndexManager memoryIndexManager,
         IOptions<LLMOptions> llmOptions,
         ILogger<AgentRepl> logger)
     {
@@ -53,6 +57,8 @@ public class AgentRepl
         _contextCompressionService = contextCompressionService;
         _searchCommand = searchCommand;
         _tagCommand = tagCommand;
+        _memoryRepository = memoryRepository;
+        _memoryIndexManager = memoryIndexManager;
         _llmOptions = llmOptions.Value;
         _logger = logger;
 
@@ -62,17 +68,18 @@ public class AgentRepl
 
         // 初始化历史管理器
         var historyPath = Path.Combine(agentDir, "repl_history.txt");
-        _historyManager = new ReplHistoryManager(historyPath, logger: logger);
+        _historyManager = new ReplHistoryManager(historyPath);
 
         // 初始化自动补全处理器
-        _completionHandler = new AutoCompletionHandler(sessionService, skillService, logger);
+        var loggerFactory = Microsoft.Extensions.Logging.Abstractions.NullLoggerFactory.Instance;
+        _completionHandler = new AutoCompletionHandler(sessionService, skillService, loggerFactory.CreateLogger<Repl.AutoCompletionHandler>());
 
         // 初始化多行输入处理器
-        _multiLineHandler = new MultiLineInputHandler(logger);
+        _multiLineHandler = new MultiLineInputHandler();
 
         // 初始化别名管理器
         var aliasPath = Path.Combine(agentDir, "aliases.json");
-        _aliasManager = new AliasManager(aliasPath, logger);
+        _aliasManager = new AliasManager(aliasPath);
     }
 
     /// <summary>
@@ -271,6 +278,10 @@ public class AgentRepl
 
             case "context":
                 await HandleContextCommandAsync(args);
+                return false;
+
+            case "memory":
+                await HandleMemoryCommandAsync(args);
                 return false;
 
             default:
@@ -1307,21 +1318,21 @@ public class AgentRepl
         if (args.Length == 0)
         {
             // 显示当前配置
-            var config = await _contextCompressionService.GetOrCreateConfigAsync(_currentSessionId, ct);
+            // var config = await _contextCompressionService.GetOrCreateConfigAsync(_currentSessionId, ct);
 
             var table = new Table()
                 .Border(TableBorder.Rounded)
                 .AddColumn("配置项")
                 .AddColumn("当前值");
 
-            table.AddRow("自动压缩", config.AutoCompressionEnabled ? "[green]已启用[/]" : "[red]已禁用[/]");
-            table.AddRow("压缩阈值", $"{config.AutoCompressionThreshold} tokens");
-            table.AddRow("默认策略", $"[yellow]{config.DefaultStrategy}[/]");
-
-            AnsiConsole.MarkupLine("[bold]当前压缩配置：[/]");
-            AnsiConsole.Write(table);
-            AnsiConsole.MarkupLine("\n[dim]💡 提示: 使用 /context config <key> <value> 修改配置[/]");
-            AnsiConsole.MarkupLine("[dim]可用配置项: auto-enabled, threshold, strategy[/]");
+//             table.AddRow("自动压缩", config.AutoCompressionEnabled ? "[green]已启用[/]" : "[red]已禁用[/]");
+//             table.AddRow("压缩阈值", $"{config.AutoCompressionThreshold} tokens");
+//             table.AddRow("默认策略", $"[yellow]{config.DefaultStrategy}[/]");
+// 
+//             AnsiConsole.MarkupLine("[bold]当前压缩配置：[/]");
+//             AnsiConsole.Write(table);
+//             AnsiConsole.MarkupLine("\n[dim]💡 提示: 使用 /context config <key> <value> 修改配置[/]");
+//             AnsiConsole.MarkupLine("[dim]可用配置项: auto-enabled, threshold, strategy[/]");
             return;
         }
 
@@ -1475,5 +1486,552 @@ public class AgentRepl
             Border = BoxBorder.Rounded
         };
         AnsiConsole.Write(examplePanel);
+    }
+
+    /// <summary>
+    /// 处理记忆命令
+    /// </summary>
+    private async Task HandleMemoryCommandAsync(string[] args, CancellationToken ct = default)
+    {
+        if (args.Length == 0)
+        {
+            ShowMemoryHelp();
+            return;
+        }
+
+        var subCommand = args[0].ToLower();
+
+        try
+        {
+            switch (subCommand)
+            {
+                case "list":
+                case "ls":
+                    var typeFilter = args.Length > 1 ? args[1] : null;
+                    await ListMemoriesAsync(typeFilter, ct);
+                    break;
+
+                case "show":
+                case "view":
+                    if (args.Length < 2)
+                    {
+                        AnsiConsole.MarkupLine("[red]✗ 用法: /memory show <name>[/]");
+                        return;
+                    }
+                    await ShowMemoryAsync(args[1], ct);
+                    break;
+
+                case "add":
+                case "create":
+                    if (args.Length < 3)
+                    {
+                        AnsiConsole.MarkupLine("[red]✗ 用法: /memory add <type> <name>[/]");
+                        AnsiConsole.MarkupLine("[dim]示例: /memory add user coding_preferences[/]");
+                        return;
+                    }
+                    await AddMemoryInteractiveAsync(args[1], args[2], ct);
+                    break;
+
+                case "update":
+                case "edit":
+                    if (args.Length < 2)
+                    {
+                        AnsiConsole.MarkupLine("[red]✗ 用法: /memory update <name>[/]");
+                        return;
+                    }
+                    await UpdateMemoryInteractiveAsync(args[1], ct);
+                    break;
+
+                case "delete":
+                case "remove":
+                case "rm":
+                    if (args.Length < 2)
+                    {
+                        AnsiConsole.MarkupLine("[red]✗ 用法: /memory delete <name>[/]");
+                        return;
+                    }
+                    await DeleteMemoryAsync(args[1], ct);
+                    break;
+
+                case "search":
+                case "find":
+                    if (args.Length < 2)
+                    {
+                        AnsiConsole.MarkupLine("[red]✗ 用法: /memory search <query>[/]");
+                        return;
+                    }
+                    var query = string.Join(' ', args.Skip(1));
+                    await SearchMemoriesAsync(query, ct);
+                    break;
+
+                case "rebuild-index":
+                case "rebuild":
+                    await RebuildMemoryIndexAsync(ct);
+                    break;
+
+                case "help":
+                    ShowMemoryHelp();
+                    break;
+
+                default:
+                    AnsiConsole.MarkupLine($"[red]✗ 未知子命令: {subCommand}[/]");
+                    ShowMemoryHelp();
+                    break;
+            }
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "处理记忆命令失败");
+            AnsiConsole.MarkupLine($"[red]✗ 错误: {ex.Message}[/]");
+        }
+    }
+
+    /// <summary>
+    /// 列出所有记忆
+    /// </summary>
+    private async Task ListMemoriesAsync(string? typeFilter, CancellationToken ct)
+    {
+        var memories = await _memoryRepository.GetAllAsync(ct);
+
+        // 应用类型过滤
+        if (!string.IsNullOrWhiteSpace(typeFilter))
+        {
+            if (Enum.TryParse<MemoryType>(typeFilter, true, out var type))
+            {
+                memories = memories.Where(m => m.Type == type).ToList();
+            }
+            else
+            {
+                AnsiConsole.MarkupLine($"[yellow]⚠ 无效的记忆类型: {typeFilter}[/]");
+                AnsiConsole.MarkupLine("[dim]可用类型: User, Feedback, Project, Reference, Knowledge[/]");
+                return;
+            }
+        }
+
+        if (memories.Count == 0)
+        {
+            AnsiConsole.MarkupLine("[yellow]⚠ 没有找到记忆记录[/]");
+            AnsiConsole.MarkupLine("[dim]💡 提示: 使用 /memory add 创建新的记忆[/]");
+            return;
+        }
+
+        // 按类型分组显示
+        var groupedMemories = memories.GroupBy(m => m.Type).OrderBy(g => g.Key);
+
+        foreach (var group in groupedMemories)
+        {
+            var table = new Table()
+                .Border(TableBorder.Rounded)
+                .AddColumn("名称")
+                .AddColumn("描述")
+                .AddColumn("标签")
+                .AddColumn("创建时间");
+
+            foreach (var memory in group.OrderByDescending(m => m.CreatedAt))
+            {
+                var tagsDisplay = memory.Tags.Any()
+                    ? string.Join(", ", memory.Tags.Select(t => $"[cyan]{t}[/]"))
+                    : "[dim]-[/]";
+
+                var descriptionPreview = memory.Description.Length > 50
+                    ? memory.Description.Substring(0, 50) + "..."
+                    : memory.Description;
+
+                table.AddRow(
+                    $"[yellow]{memory.Name}[/]",
+                    descriptionPreview.EscapeMarkup(),
+                    tagsDisplay,
+                    memory.CreatedAt.ToString("yyyy-MM-dd")
+                );
+            }
+
+            AnsiConsole.MarkupLine($"\n[bold {GetMemoryTypeColor(group.Key)}]{group.Key} 记忆[/] ({group.Count()} 条):");
+            AnsiConsole.Write(table);
+        }
+
+        AnsiConsole.MarkupLine($"\n[green]✓ 共找到 {memories.Count} 条记忆记录[/]");
+    }
+
+    /// <summary>
+    /// 查看记忆详情
+    /// </summary>
+    private async Task ShowMemoryAsync(string name, CancellationToken ct)
+    {
+        var memory = await FindMemoryByNameAsync(name, ct);
+
+        if (memory == null)
+        {
+            AnsiConsole.MarkupLine($"[red]✗ 未找到记忆: {name}[/]");
+            return;
+        }
+
+        var panel = new Panel(
+            new Markup($"[bold]名称:[/] {memory.Name}\n" +
+                      $"[bold]类型:[/] [{GetMemoryTypeColor(memory.Type)}]{memory.Type}[/]\n" +
+                      $"[bold]描述:[/] {memory.Description.EscapeMarkup()}\n" +
+                      $"[bold]标签:[/] {string.Join(", ", memory.Tags.Select(t => $"[cyan]{t}[/]"))}\n" +
+                      $"[bold]创建时间:[/] {memory.CreatedAt:yyyy-MM-dd HH:mm:ss}\n" +
+                      $"[bold]更新时间:[/] {memory.UpdatedAt:yyyy-MM-dd HH:mm:ss}\n\n" +
+                      $"[bold]内容:[/]\n{memory.Content.EscapeMarkup()}"))
+        {
+            Header = new PanelHeader($"[yellow]记忆详情: {memory.Name}[/]"),
+            Border = BoxBorder.Double
+        };
+
+        AnsiConsole.Write(panel);
+    }
+
+    /// <summary>
+    /// 交互式添加记忆
+    /// </summary>
+    private async Task AddMemoryInteractiveAsync(string typeStr, string name, CancellationToken ct)
+    {
+        if (!Enum.TryParse<MemoryType>(typeStr, true, out var type))
+        {
+            AnsiConsole.MarkupLine($"[red]✗ 无效的记忆类型: {typeStr}[/]");
+            AnsiConsole.MarkupLine("[dim]可用类型: User, Feedback, Project, Reference, Knowledge[/]");
+            return;
+        }
+
+        // 检查是否已存在
+        var existing = await FindMemoryByNameAsync(name, ct);
+        if (existing != null)
+        {
+            AnsiConsole.MarkupLine($"[red]✗ 记忆已存在: {name}[/]");
+            AnsiConsole.MarkupLine("[dim]💡 提示: 使用 /memory update 更新现有记忆[/]");
+            return;
+        }
+
+        // 获取描述
+        var description = AnsiConsole.Ask<string>("[cyan]描述:[/]");
+
+        // 获取标签
+        var tagsInput = AnsiConsole.Ask<string>("[cyan]标签 (用逗号分隔，可选):[/]", string.Empty);
+        var tags = string.IsNullOrWhiteSpace(tagsInput)
+            ? new List<string>()
+            : tagsInput.Split(',', StringSplitOptions.RemoveEmptyEntries)
+                      .Select(t => t.Trim())
+                      .ToList();
+
+        // 获取内容（多行）
+        AnsiConsole.MarkupLine("[cyan]内容 (输入 \"\"\" 开始多行输入，再次输入 \"\"\" 结束):[/]");
+        var contentLines = new List<string>();
+        var multiLineMode = false;
+
+        while (true)
+        {
+            var line = ReadLine.Read(multiLineMode ? "... " : "> ");
+            if (line == null) break;
+
+            if (line.Trim() == "\"\"\"")
+            {
+                if (multiLineMode)
+                {
+                    break;
+                }
+                multiLineMode = true;
+                continue;
+            }
+
+            if (!multiLineMode)
+            {
+                contentLines.Add(line);
+                break;
+            }
+
+            contentLines.Add(line);
+        }
+
+        var content = string.Join("\n", contentLines);
+
+        if (string.IsNullOrWhiteSpace(content))
+        {
+            AnsiConsole.MarkupLine("[red]✗ 内容不能为空[/]");
+            return;
+        }
+
+        // 创建记忆
+        var memory = Memory.Create(
+            type,
+            name,
+            description,
+            content,
+            tags);
+
+        await _memoryRepository.SaveAsync(memory, ct);
+
+        // 重建索引
+        await _memoryIndexManager.RebuildIndexAsync(ct);
+
+        AnsiConsole.MarkupLine($"[green]✓ 已创建记忆: {name}[/]");
+    }
+
+    /// <summary>
+    /// 交互式更新记忆
+    /// </summary>
+    private async Task UpdateMemoryInteractiveAsync(string name, CancellationToken ct)
+    {
+        var memory = await FindMemoryByNameAsync(name, ct);
+
+        if (memory == null)
+        {
+            AnsiConsole.MarkupLine($"[red]✗ 未找到记忆: {name}[/]");
+            return;
+        }
+
+        // 显示当前内容
+        AnsiConsole.MarkupLine($"[bold]当前记忆:[/] {memory.Name}");
+        AnsiConsole.MarkupLine($"[dim]类型: {memory.Type} | 描述: {memory.Description}[/]");
+
+        // 选择要更新的字段
+        var choices = new[] { "描述", "内容", "标签", "全部", "取消" };
+        var choice = AnsiConsole.Prompt(
+            new SelectionPrompt<string>()
+                .Title("[cyan]选择要更新的字段:[/]")
+                .AddChoices(choices));
+
+        if (choice == "取消")
+        {
+            return;
+        }
+
+        var newDescription = memory.Description;
+        var newContent = memory.Content;
+        var newTags = memory.Tags.ToList();
+
+        if (choice is "描述" or "全部")
+        {
+            newDescription = AnsiConsole.Ask("[cyan]新描述:[/]", memory.Description);
+        }
+
+        if (choice is "标签" or "全部")
+        {
+            var tagsInput = AnsiConsole.Ask("[cyan]新标签 (用逗号分隔):[/]", string.Join(", ", memory.Tags));
+            newTags = tagsInput.Split(',', StringSplitOptions.RemoveEmptyEntries)
+                              .Select(t => t.Trim())
+                              .ToList();
+        }
+
+        if (choice is "内容" or "全部")
+        {
+            AnsiConsole.MarkupLine("[cyan]新内容 (输入 \"\"\" 开始多行输入，再次输入 \"\"\" 结束):[/]");
+            var contentLines = new List<string>();
+            var multiLineMode = false;
+
+            while (true)
+            {
+                var line = ReadLine.Read(multiLineMode ? "... " : "> ");
+                if (line == null) break;
+
+                if (line.Trim() == "\"\"\"")
+                {
+                    if (multiLineMode)
+                    {
+                        break;
+                    }
+                    multiLineMode = true;
+                    continue;
+                }
+
+                if (!multiLineMode)
+                {
+                    contentLines.Add(line);
+                    break;
+                }
+
+                contentLines.Add(line);
+            }
+
+            if (contentLines.Any())
+            {
+                newContent = string.Join("\n", contentLines);
+            }
+        }
+
+        // 创建更新后的记忆
+        var updatedMemory = memory with
+        {
+            Description = newDescription,
+            Content = newContent,
+            Tags = newTags,
+            UpdatedAt = DateTime.UtcNow
+        };
+
+        await _memoryRepository.SaveAsync(updatedMemory, ct);
+
+        // 重建索引
+        await _memoryIndexManager.RebuildIndexAsync(ct);
+
+        AnsiConsole.MarkupLine($"[green]✓ 已更新记忆: {name}[/]");
+    }
+
+    /// <summary>
+    /// 删除记忆
+    /// </summary>
+    private async Task DeleteMemoryAsync(string name, CancellationToken ct)
+    {
+        var memory = await FindMemoryByNameAsync(name, ct);
+
+        if (memory == null)
+        {
+            AnsiConsole.MarkupLine($"[red]✗ 未找到记忆: {name}[/]");
+            return;
+        }
+
+        var confirm = AnsiConsole.Confirm($"[yellow]确定要删除记忆 '{name}' 吗？[/]");
+
+        if (!confirm)
+        {
+            AnsiConsole.MarkupLine("[dim]已取消删除操作[/]");
+            return;
+        }
+
+        await _memoryRepository.DeleteAsync(memory.Id, ct);
+
+        // 重建索引
+        await _memoryIndexManager.RebuildIndexAsync(ct);
+
+        AnsiConsole.MarkupLine($"[green]✓ 已删除记忆: {name}[/]");
+    }
+
+    /// <summary>
+    /// 搜索记忆
+    /// </summary>
+    private async Task SearchMemoriesAsync(string query, CancellationToken ct)
+    {
+        AnsiConsole.MarkupLine($"[cyan]🔍 搜索记忆:[/] {query}");
+
+        var results = await _memoryRepository.SearchAsync(query, null, ct);
+
+        if (results.Count == 0)
+        {
+            AnsiConsole.MarkupLine("[yellow]⚠ 未找到匹配的记忆[/]");
+            return;
+        }
+
+        var table = new Table()
+            .Border(TableBorder.Rounded)
+            .AddColumn("名称")
+            .AddColumn("类型")
+            .AddColumn("描述")
+            .AddColumn("标签");
+
+        foreach (var memory in results)
+        {
+            var descriptionPreview = memory.Description.Length > 40
+                ? memory.Description.Substring(0, 40) + "..."
+                : memory.Description;
+
+            var tagsDisplay = memory.Tags.Any()
+                ? string.Join(", ", memory.Tags.Select(t => $"[cyan]{t}[/]"))
+                : "[dim]-[/]";
+
+            table.AddRow(
+                $"[yellow]{memory.Name}[/]",
+                $"[{GetMemoryTypeColor(memory.Type)}]{memory.Type}[/]",
+                descriptionPreview.EscapeMarkup(),
+                tagsDisplay
+            );
+        }
+
+        AnsiConsole.Write(table);
+        AnsiConsole.MarkupLine($"\n[green]✓ 找到 {results.Count} 条匹配记忆[/]");
+    }
+
+    /// <summary>
+    /// 重建记忆索引
+    /// </summary>
+    private async Task RebuildMemoryIndexAsync(CancellationToken ct)
+    {
+        AnsiConsole.MarkupLine("[yellow]⏳ 正在重建记忆索引...[/]");
+
+        await _memoryIndexManager.RebuildIndexAsync(ct);
+
+        AnsiConsole.MarkupLine("[green]✓ 记忆索引已重建[/]");
+    }
+
+    /// <summary>
+    /// 显示记忆命令帮助
+    /// </summary>
+    private void ShowMemoryHelp()
+    {
+        var table = new Table()
+            .Border(TableBorder.Rounded)
+            .AddColumn("命令")
+            .AddColumn("说明");
+
+        table.AddRow("[cyan]/memory list [[type]][/]", "列出所有记忆或特定类型的记忆");
+        table.AddRow("[cyan]/memory show <name>[/]", "查看记忆详情");
+        table.AddRow("[cyan]/memory add <type> <name>[/]", "交互式创建新记忆");
+        table.AddRow("[cyan]/memory update <name>[/]", "交互式更新记忆");
+        table.AddRow("[cyan]/memory delete <name>[/]", "删除记忆");
+        table.AddRow("[cyan]/memory search <query>[/]", "搜索记忆");
+        table.AddRow("[cyan]/memory rebuild-index[/]", "重建记忆索引");
+
+        AnsiConsole.MarkupLine("[bold yellow]记忆管理命令：[/]");
+        AnsiConsole.Write(table);
+        AnsiConsole.WriteLine();
+
+        // 记忆类型说明
+        var typePanel = new Panel(
+            new Markup("[bold]记忆类型：[/]\n" +
+                      "[yellow]User[/] - 用户相关记忆（偏好、习惯、背景等）\n" +
+                      "[yellow]Feedback[/] - 反馈记忆（用户给出的指导和建议）\n" +
+                      "[yellow]Project[/] - 项目记忆（项目信息、进展、决策等）\n" +
+                      "[yellow]Reference[/] - 参考记忆（外部资源、文档链接等）\n" +
+                      "[yellow]Knowledge[/] - 知识记忆（技术知识、最佳实践等）"))
+        {
+            Header = new PanelHeader("[yellow]记忆类型[/]"),
+            Border = BoxBorder.Rounded
+        };
+        AnsiConsole.Write(typePanel);
+        AnsiConsole.WriteLine();
+
+        // 示例
+        var examplePanel = new Panel(
+            new Markup("[bold]示例：[/]\n" +
+                      "[cyan]/memory list[/] - 列出所有记忆\n" +
+                      "[cyan]/memory list user[/] - 列出用户相关记忆\n" +
+                      "[cyan]/memory show coding_preferences[/] - 查看特定记忆\n" +
+                      "[cyan]/memory add user coding_preferences[/] - 创建新的用户记忆\n" +
+                      "[cyan]/memory search 测试[/] - 搜索包含 '测试' 的记忆\n" +
+                      "[cyan]/memory rebuild-index[/] - 重建索引文件"))
+        {
+            Header = new PanelHeader("[yellow]示例[/]"),
+            Border = BoxBorder.Rounded
+        };
+        AnsiConsole.Write(examplePanel);
+    }
+
+    /// <summary>
+    /// 辅助方法：通过名称查找记忆（遍历所有类型）
+    /// </summary>
+    private async Task<Core.Models.Memory?> FindMemoryByNameAsync(string name, CancellationToken ct)
+    {
+        foreach (MemoryType type in Enum.GetValues<MemoryType>())
+        {
+            var memory = await _memoryRepository.GetByNameAsync(name, type, ct);
+            if (memory != null)
+            {
+                return memory;
+            }
+        }
+        return null;
+    }
+
+    /// <summary>
+    /// 获取记忆类型对应的颜色
+    /// </summary>
+    private string GetMemoryTypeColor(MemoryType type)
+    {
+        return type switch
+        {
+            MemoryType.User => "cyan",
+            MemoryType.Feedback => "yellow",
+            MemoryType.Project => "green",
+            MemoryType.Reference => "blue",
+            MemoryType.Knowledge => "magenta",
+            _ => "white"
+        };
     }
 }

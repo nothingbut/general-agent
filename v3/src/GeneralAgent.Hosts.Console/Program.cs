@@ -7,6 +7,7 @@ using GeneralAgent.Hosts.Console.Commands;
 using GeneralAgent.Hosts.Console.Services;
 using GeneralAgent.Infrastructure;
 using GeneralAgent.Infrastructure.LLM;
+using GeneralAgent.Infrastructure.Memory;
 using GeneralAgent.Infrastructure.Storage;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Configuration;
@@ -27,6 +28,7 @@ try
     // 2. 注册各层服务
     builder.Services.AddInfrastructure(connectionString);
     builder.Services.AddLLMInfrastructure(builder.Configuration);
+    builder.Services.AddMemoryServices(builder.Configuration);
     builder.Services.AddApplicationLayer(builder.Configuration);
     builder.Services.AddHostedService<BackgroundTaskService>();
 

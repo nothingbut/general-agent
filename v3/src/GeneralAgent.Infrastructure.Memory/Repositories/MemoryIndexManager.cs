@@ -1,27 +1,25 @@
 using GeneralAgent.Core.Abstractions;
+using GeneralAgent.Core.Models;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Options;
 using System.Text;
-using CoreCoreMemory = GeneralAgent.Core.Models.CoreMemory;
-using CoreCoreCoreMemoryType = GeneralAgent.Core.Models.CoreCoreMemoryType;
-using CoreCoreCoreMemoryIndex = GeneralAgent.Core.Models.CoreCoreMemoryIndex;
 
-namespace GeneralAgent.Infrastructure.CoreMemory.Repositories;
+namespace GeneralAgent.Infrastructure.Memory.Repositories;
 
 /// <summary>
 /// 记忆索引管理器（管理 MEMORY.md）
 /// </summary>
-public class CoreCoreMemoryIndexManager : ICoreCoreMemoryIndexManager
+public class MemoryIndexManager : IMemoryIndexManager
 {
-    private readonly CoreMemoryOptions _options;
-    private readonly ICoreMemoryRepository _memoryRepository;
-    private readonly ILogger<CoreCoreMemoryIndexManager> _logger;
+    private readonly MemoryOptions _options;
+    private readonly IMemoryRepository _memoryRepository;
+    private readonly ILogger<MemoryIndexManager> _logger;
     private readonly string _indexFilePath;
 
-    public CoreCoreMemoryIndexManager(
-        IOptions<CoreMemoryOptions> options,
-        ICoreMemoryRepository memoryRepository,
-        ILogger<CoreCoreMemoryIndexManager> logger)
+    public MemoryIndexManager(
+        IOptions<MemoryOptions> options,
+        IMemoryRepository memoryRepository,
+        ILogger<MemoryIndexManager> logger)
     {
         _options = options.Value;
         _memoryRepository = memoryRepository;
@@ -52,7 +50,7 @@ public class CoreCoreMemoryIndexManager : ICoreCoreMemoryIndexManager
             allMemories.Count);
     }
 
-    public async Task AddToIndexAsync(CoreMemory memory, CancellationToken cancellationToken = default)
+    public async Task AddToIndexAsync(Core.Models.Memory memory, CancellationToken cancellationToken = default)
     {
         // 简单实现：重建索引
         // 优化方案：可以直接在索引文件中插入新条目
@@ -69,7 +67,7 @@ public class CoreCoreMemoryIndexManager : ICoreCoreMemoryIndexManager
         _logger.LogDebug("从索引中移除记忆: {Id}", memoryId);
     }
 
-    public async Task UpdateInIndexAsync(CoreMemory memory, CancellationToken cancellationToken = default)
+    public async Task UpdateInIndexAsync(Core.Models.Memory memory, CancellationToken cancellationToken = default)
     {
         // 简单实现：重建索引
         await RebuildIndexAsync(cancellationToken);
@@ -77,18 +75,18 @@ public class CoreCoreMemoryIndexManager : ICoreCoreMemoryIndexManager
         _logger.LogDebug("更新索引中的记忆: {Name}", memory.Name);
     }
 
-    public async Task<List<CoreCoreMemoryIndex>> GetAllIndexEntriesAsync(CancellationToken cancellationToken = default)
+    public async Task<List<MemoryIndex>> GetAllIndexEntriesAsync(CancellationToken cancellationToken = default)
     {
         var allMemories = await _memoryRepository.GetAllAsync(cancellationToken);
-        return allMemories.Select(CoreCoreMemoryIndex.FromCoreMemory).ToList();
+        return allMemories.Select(MemoryIndex.FromMemory).ToList();
     }
 
-    public async Task<List<CoreCoreMemoryIndex>> GetIndexEntriesByTypeAsync(
-        CoreCoreMemoryType type,
+    public async Task<List<MemoryIndex>> GetIndexEntriesByTypeAsync(
+        MemoryType type,
         CancellationToken cancellationToken = default)
     {
         var memories = await _memoryRepository.GetByTypeAsync(type, cancellationToken);
-        return memories.Select(CoreCoreMemoryIndex.FromCoreMemory).ToList();
+        return memories.Select(MemoryIndex.FromMemory).ToList();
     }
 
     public async Task<bool> ValidateIndexAsync(CancellationToken cancellationToken = default)
@@ -140,7 +138,7 @@ public class CoreCoreMemoryIndexManager : ICoreCoreMemoryIndexManager
     /// <summary>
     /// 生成索引文件内容
     /// </summary>
-    private string GenerateIndexContent(Dictionary<CoreCoreMemoryType, List<CoreMemory>> memoriesByType)
+    private string GenerateIndexContent(Dictionary<MemoryType, List<Core.Models.Memory>> memoriesByType)
     {
         var sb = new StringBuilder();
 
@@ -156,7 +154,7 @@ public class CoreCoreMemoryIndexManager : ICoreCoreMemoryIndexManager
         sb.AppendLine();
 
         // 按类型列出记忆
-        foreach (var type in Enum.GetValues<CoreCoreMemoryType>())
+        foreach (var type in Enum.GetValues<MemoryType>())
         {
             if (!memoriesByType.ContainsKey(type) || memoriesByType[type].Count == 0)
             {
@@ -170,7 +168,7 @@ public class CoreCoreMemoryIndexManager : ICoreCoreMemoryIndexManager
 
             foreach (var memory in memories.OrderBy(m => m.Name))
             {
-                var index = CoreCoreMemoryIndex.FromCoreMemory(memory);
+                var index = MemoryIndex.FromMemory(memory);
                 sb.AppendLine(index.ToMarkdownLine());
             }
 
@@ -187,15 +185,15 @@ public class CoreCoreMemoryIndexManager : ICoreCoreMemoryIndexManager
     /// <summary>
     /// 获取记忆类型的显示名称
     /// </summary>
-    private string GetTypeDisplayName(CoreCoreMemoryType type)
+    private string GetTypeDisplayName(MemoryType type)
     {
         return type switch
         {
-            CoreCoreMemoryType.User => "User (用户记忆)",
-            CoreCoreMemoryType.Feedback => "Feedback (反馈记忆)",
-            CoreCoreMemoryType.Project => "Project (项目记忆)",
-            CoreCoreMemoryType.Reference => "Reference (参考记忆)",
-            CoreCoreMemoryType.Knowledge => "Knowledge (知识记忆)",
+            MemoryType.User => "User (用户记忆)",
+            MemoryType.Feedback => "Feedback (反馈记忆)",
+            MemoryType.Project => "Project (项目记忆)",
+            MemoryType.Reference => "Reference (参考记忆)",
+            MemoryType.Knowledge => "Knowledge (知识记忆)",
             _ => type.ToString()
         };
     }
