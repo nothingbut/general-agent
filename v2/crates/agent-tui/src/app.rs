@@ -133,10 +133,8 @@ impl TuiApp {
             self.draw()?;
 
             // 处理事件（非阻塞轮询）
-            if self.handle_events().await? {
-                if self.should_quit {
-                    break;
-                }
+            if self.handle_events().await? && self.should_quit {
+                break;
             }
 
             // 处理后台更新（非阻塞）

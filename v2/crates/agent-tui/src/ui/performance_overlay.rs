@@ -224,7 +224,7 @@ impl PerformanceOverlay {
             .split(area);
 
         // Header: Workflow ID and Status
-        let status_color = Self::get_status_color(&metrics);
+        let status_color = Self::get_status_color(metrics);
         let header_lines = vec![
             Line::from(vec![
                 Span::raw("工作流 ID: "),
@@ -233,7 +233,7 @@ impl PerformanceOverlay {
             Line::from(vec![
                 Span::raw("状态: "),
                 Span::styled(
-                    Self::format_status(&metrics),
+                    Self::format_status(metrics),
                     Style::default()
                         .fg(status_color)
                         .add_modifier(Modifier::BOLD),

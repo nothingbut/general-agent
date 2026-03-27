@@ -42,12 +42,7 @@ pub fn render_chat_window(f: &mut Frame, area: Rect, state: &AppState) {
         // 获取消息列表
         let message_lines: Vec<Line> = state
             .get_messages(session_id)
-            .map(|messages| {
-                messages
-                    .iter()
-                    .flat_map(|msg| format_message(msg))
-                    .collect()
-            })
+            .map(|messages| messages.iter().flat_map(format_message).collect())
             .unwrap_or_default();
 
         let mut all_lines = title_line;
@@ -101,7 +96,7 @@ pub fn render_chat_window(f: &mut Frame, area: Rect, state: &AppState) {
 }
 
 /// 格式化单条消息
-fn format_message(msg: &MessageItem) -> Vec<Line> {
+fn format_message<'a>(msg: &'a MessageItem) -> Vec<Line<'a>> {
     let role_color = if msg.role == "user" {
         AppColors::INFO
     } else {

@@ -170,10 +170,7 @@ impl AppState {
 
     /// 添加消息
     pub fn add_message(&mut self, session_id: Uuid, message: MessageItem) {
-        self.messages
-            .entry(session_id)
-            .or_insert_with(Vec::new)
-            .push(message);
+        self.messages.entry(session_id).or_default().push(message);
     }
 
     /// 清空输入
@@ -213,7 +210,7 @@ impl AppState {
     pub fn append_streaming_content(&mut self, session_id: Uuid, content: &str) {
         self.streaming_buffer
             .entry(session_id)
-            .or_insert_with(String::new)
+            .or_default()
             .push_str(content);
     }
 

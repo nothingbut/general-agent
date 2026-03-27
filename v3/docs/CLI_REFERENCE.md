@@ -730,6 +730,65 @@ agent config reset --force
 
 ---
 
+### 别名管理 🆕 (V3 Phase 5)
+
+| 命令 | 参数 | 说明 |
+|------|------|------|
+| `/alias` | | 列出所有已配置的别名 |
+| `/alias add` | `<别名> <命令>` | 添加新别名 |
+| `/alias remove` | `<别名>` | 移除别名 |
+
+#### 示例
+
+```bash
+# 列出所有别名
+/alias
+
+# 添加别名
+/alias add n new
+/alias add ls list
+/alias add s session
+
+# 使用别名
+/n 快速会话      # 等同于 /new 快速会话
+/ls              # 等同于 /list
+/s 12345678      # 等同于 /session 12345678
+
+# 移除别名
+/alias remove n
+```
+
+#### 预定义别名
+
+默认配置包含以下别名：
+
+- `n` → `new`
+- `ls` → `list`
+- `s` → `session`
+- `del` → `delete`
+- `q` → `quit`
+- `h` → `help`
+
+#### 别名配置文件
+
+别名保存在 `~/.agent/aliases.json`：
+
+```json
+{
+  "aliases": {
+    "n": "new",
+    "ls": "list",
+    "s": "session",
+    "del": "delete",
+    "q": "quit",
+    "h": "help"
+  },
+  "version": "1.0"
+}
+```
+
+---
+
 ### 标签管理 🆕 (V3.1)
 
 | 命令 | 参数 | 说明 |
