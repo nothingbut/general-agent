@@ -22,6 +22,7 @@ public sealed class OllamaEmbeddingClient : IEmbeddingClient
     /// </summary>
     private static readonly JsonSerializerOptions JsonOptions = new()
     {
+        PropertyNamingPolicy = JsonNamingPolicy.CamelCase,
         PropertyNameCaseInsensitive = true,
         DefaultIgnoreCondition = JsonIgnoreCondition.WhenWritingNull
     };
