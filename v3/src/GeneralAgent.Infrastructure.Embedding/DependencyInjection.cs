@@ -23,21 +23,25 @@ public static class DependencyInjection
         services.Configure<EmbeddingOptions>(
             configuration.GetSection(EmbeddingOptions.SectionName));
 
-        // 注册 HttpClient
-        services.AddHttpClient<IEmbeddingClient, OllamaEmbeddingClient>(
-            (serviceProvider, client) =>
-            {
-                var options = configuration
-                    .GetSection(EmbeddingOptions.SectionName)
-                    .Get<EmbeddingOptions>();
+        // 提前读取配置（避免每次解析重复反序列化）
+        var embeddingOptions = configuration
+            .GetSection(EmbeddingOptions.SectionName)
+            .Get<EmbeddingOptions>() ?? new EmbeddingOptions();
 
-                if (options is not null)
-                {
-                    client.BaseAddress = new Uri(options.BaseUrl);
-                    client.Timeout = TimeSpan.FromSeconds(options.TimeoutSeconds);
-                }
-            })
-            .SetHandlerLifetime(TimeSpan.FromMinutes(5));
+        // 注册 HttpClient
+        services.AddHttpClient<IEmbeddingClient, OllamaEmbeddingClient>(client =>
+        {
+            // 验证 BaseUrl 是有效的 URI
+            if (!Uri.TryCreate(embeddingOptions.BaseUrl, UriKind.Absolute, out var baseUri))
+            {
+                throw new InvalidOperationException(
+                    $"Invalid Embedding BaseUrl: '{embeddingOptions.BaseUrl}'. Must be a valid absolute URI.");
+            }
+
+            client.BaseAddress = baseUri;
+            client.Timeout = TimeSpan.FromSeconds(embeddingOptions.TimeoutSeconds);
+        })
+        .SetHandlerLifetime(TimeSpan.FromMinutes(5));
 
         return services;
     }
