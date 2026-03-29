@@ -49,18 +49,23 @@ public sealed class OllamaEmbeddingIntegrationTests : IAsyncLifetime
             services.AddLogging(builder => builder.AddConsole().SetMinimumLevel(LogLevel.Warning));
 
             // 手动注册 Embedding 相关服务
-            services.Configure<EmbeddingOptions>(opt =>
+            // 注意：EmbeddingOptions 使用 init 访问器，不能通过 Configure 修改
+            // 直接注册配置对象
+            var embeddingOptions = new EmbeddingOptions
             {
-                opt = new EmbeddingOptions
-                {
-                    Provider = "Ollama",
-                    BaseUrl = _ollamaBaseUrl,
-                    Model = _embeddingModel,
-                    TimeoutSeconds = 60
-                };
-            });
+                Provider = "Ollama",
+                BaseUrl = _ollamaBaseUrl,
+                Model = _embeddingModel,
+                TimeoutSeconds = 60
+            };
+            services.AddSingleton(Options.Create(embeddingOptions));
 
-            services.AddHttpClient<OllamaEmbeddingClient>();
+            services.AddHttpClient<OllamaEmbeddingClient>(client =>
+            {
+                client.BaseAddress = new Uri(_ollamaBaseUrl);
+                client.Timeout = _timeout;
+            })
+            .SetHandlerLifetime(TimeSpan.FromMinutes(5));
 
             _serviceProvider = services.BuildServiceProvider();
 
