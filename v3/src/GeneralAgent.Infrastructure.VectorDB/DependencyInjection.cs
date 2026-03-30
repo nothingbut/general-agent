@@ -40,7 +40,12 @@ public static class DependencyInjection
                     $"Invalid VectorDB Url: '{vectorDBOptions.Url}'. Must be a valid absolute URI.");
             }
 
-            return new QdrantClient(vectorDBOptions.Url);
+            // QdrantClient 使用 gRPC，需要主机和端口
+            // REST API: 6333, gRPC: 6334
+            var host = uri.Host;
+            var port = uri.Port == 6333 ? 6334 : uri.Port; // 如果是 REST 端口，转换为 gRPC 端口
+
+            return new QdrantClient(host, port);
         });
 
         // 注册 IQdrantClient 包装器
