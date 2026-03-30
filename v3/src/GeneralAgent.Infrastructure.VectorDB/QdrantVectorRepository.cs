@@ -13,7 +13,7 @@ namespace GeneralAgent.Infrastructure.VectorDB;
 /// </summary>
 public sealed class QdrantVectorRepository : IVectorRepository
 {
-    private readonly QdrantClient _client;
+    private readonly IQdrantClient _client;
     private readonly VectorDBOptions _options;
     private readonly ILogger<QdrantVectorRepository> _logger;
 
@@ -22,7 +22,7 @@ public sealed class QdrantVectorRepository : IVectorRepository
     private bool _lastHealthStatus;
 
     public QdrantVectorRepository(
-        QdrantClient client,
+        IQdrantClient client,
         IOptions<VectorDBOptions> options,
         ILogger<QdrantVectorRepository> logger)
     {

@@ -43,6 +43,13 @@ public static class DependencyInjection
             return new QdrantClient(vectorDBOptions.Url);
         });
 
+        // 注册 IQdrantClient 包装器
+        services.AddSingleton<IQdrantClient>(sp =>
+        {
+            var client = sp.GetRequiredService<QdrantClient>();
+            return new QdrantClientWrapper(client);
+        });
+
         // 注册向量存储库
         services.AddSingleton<IVectorRepository, QdrantVectorRepository>();
 
