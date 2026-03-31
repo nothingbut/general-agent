@@ -62,7 +62,7 @@ public class MemoryRepository : IMemoryRepository
             try
             {
                 // 生成记忆内容的 embedding
-                var embeddingText = $"{memory.Name}\n{memory.Description}\n{memory.Content}";
+                var embeddingText = $"{memory.Name} {memory.Description} {memory.Content}";
                 var embedding = await _embeddingClient.GenerateEmbeddingAsync(
                     embeddingText,
                     cancellationToken);
@@ -70,6 +70,7 @@ public class MemoryRepository : IMemoryRepository
                 // 准备元数据
                 var metadata = new Dictionary<string, object>
                 {
+                    { "memory_id", memory.Id.ToString() },
                     { "type", memory.Type.ToString() },
                     { "name", memory.Name },
                     { "description", memory.Description },
