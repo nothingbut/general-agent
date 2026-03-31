@@ -15,14 +15,20 @@ public class MemoryRepository : IMemoryRepository
     private readonly MemoryOptions _options;
     private readonly ILogger<MemoryRepository> _logger;
     private readonly string _rootPath;
+    private readonly IVectorRepository? _vectorRepository;
+    private readonly IEmbeddingClient? _embeddingClient;
 
     public MemoryRepository(
         IOptions<MemoryOptions> options,
-        ILogger<MemoryRepository> logger)
+        ILogger<MemoryRepository> logger,
+        IVectorRepository? vectorRepository = null,
+        IEmbeddingClient? embeddingClient = null)
     {
         _options = options.Value;
         _logger = logger;
         _rootPath = _options.RootDirectory;
+        _vectorRepository = vectorRepository;
+        _embeddingClient = embeddingClient;
 
         // 确保根目录存在
         EnsureDirectoriesExist();
@@ -49,6 +55,49 @@ public class MemoryRepository : IMemoryRepository
         _logger.LogInformation(
             "保存记忆: {Name} ({Type}) -> {FilePath}",
             memory.Name, memory.Type, memory.FilePath);
+
+        // 同步到向量数据库（可选，容错）
+        if (_vectorRepository != null && _embeddingClient != null)
+        {
+            try
+            {
+                // 生成记忆内容的 embedding
+                var embeddingText = $"{memory.Name}\n{memory.Description}\n{memory.Content}";
+                var embedding = await _embeddingClient.GenerateEmbeddingAsync(
+                    embeddingText,
+                    cancellationToken);
+
+                // 准备元数据
+                var metadata = new Dictionary<string, object>
+                {
+                    { "type", memory.Type.ToString() },
+                    { "name", memory.Name },
+                    { "description", memory.Description },
+                    { "tags", string.Join(",", memory.Tags) },
+                    { "created_at", memory.CreatedAt.ToString("O") },
+                    { "updated_at", memory.UpdatedAt.ToString("O") }
+                };
+
+                // 同步到向量数据库
+                await _vectorRepository.UpsertAsync(
+                    memory.Id,
+                    embedding,
+                    metadata,
+                    cancellationToken);
+
+                _logger.LogDebug(
+                    "记忆向量已同步到 VectorDB: {Name} ({Dimensions}D)",
+                    memory.Name,
+                    embedding.Length);
+            }
+            catch (Exception ex)
+            {
+                _logger.LogWarning(
+                    ex,
+                    "向量同步失败，但记忆已保存到文件系统: {Name}",
+                    memory.Name);
+            }
+        }
 
         return memory;
     }
@@ -157,8 +206,10 @@ public class MemoryRepository : IMemoryRepository
         return await SaveAsync(memory, cancellationToken);
     }
 
-    public Task<bool> DeleteAsync(Guid id, CancellationToken cancellationToken = default)
+    public async Task<bool> DeleteAsync(Guid id, CancellationToken cancellationToken = default)
     {
+        var deleted = false;
+
         // 需要先找到文件
         var allFiles = Directory.GetFiles(_rootPath, "*.md", SearchOption.AllDirectories);
 
@@ -171,7 +222,8 @@ public class MemoryRepository : IMemoryRepository
                 {
                     File.Delete(file);
                     _logger.LogInformation("删除记忆文件: {File}", file);
-                    return Task.FromResult(true);
+                    deleted = true;
+                    break;
                 }
             }
             catch (Exception ex)
@@ -180,7 +232,24 @@ public class MemoryRepository : IMemoryRepository
             }
         }
 
-        return Task.FromResult(false);
+        // 同步删除向量数据库中的记录（可选，容错）
+        if (deleted && _vectorRepository != null)
+        {
+            try
+            {
+                await _vectorRepository.DeleteAsync(id, cancellationToken);
+                _logger.LogDebug("向量已从 VectorDB 删除: {Id}", id);
+            }
+            catch (Exception ex)
+            {
+                _logger.LogWarning(
+                    ex,
+                    "向量删除失败，但记忆已从文件系统删除: {Id}",
+                    id);
+            }
+        }
+
+        return deleted;
     }
 
     public async Task<bool> ExistsAsync(Guid id, CancellationToken cancellationToken = default)
