@@ -1,3 +1,4 @@
+using System.Diagnostics;
 using System.Text;
 using System.Text.Json;
 using GeneralAgent.Core.Abstractions;
@@ -15,6 +16,13 @@ public sealed class MemoryRetrievalService : IMemoryRetrievalService
     private readonly ILLMClientFactory _llmFactory;
     private readonly IMemoryRepository _memoryRepository;
     private readonly ILogger<MemoryRetrievalService> _logger;
+    private readonly IEmbeddingClient? _embeddingClient;
+    private readonly IVectorRepository? _vectorRepository;
+
+    /// <summary>
+    /// 降级到 LLM 评分时触发的事件
+    /// </summary>
+    public event Action<string>? OnFallbackToLLMScoring;
 
     private const string RelevanceSystemPrompt = """
         你是一个记忆相关性评估助手。你的任务是评估记忆内容与查询的相关性。
@@ -59,11 +67,15 @@ public sealed class MemoryRetrievalService : IMemoryRetrievalService
     public MemoryRetrievalService(
         ILLMClientFactory llmFactory,
         IMemoryRepository memoryRepository,
-        ILogger<MemoryRetrievalService> logger)
+        ILogger<MemoryRetrievalService> logger,
+        IEmbeddingClient? embeddingClient = null,
+        IVectorRepository? vectorRepository = null)
     {
         _llmFactory = llmFactory;
         _memoryRepository = memoryRepository;
         _logger = logger;
+        _embeddingClient = embeddingClient;
+        _vectorRepository = vectorRepository;
     }
 
     public async Task<List<MemoryEntity>> SearchBySemanticAsync(
@@ -76,6 +88,70 @@ public sealed class MemoryRetrievalService : IMemoryRetrievalService
         {
             return new List<MemoryEntity>();
         }
+
+        // 1. 检查 Qdrant 健康状态（30秒缓存）
+        var isHealthy = _vectorRepository != null && _embeddingClient != null &&
+                        await _vectorRepository.IsHealthyAsync(cancellationToken);
+
+        if (isHealthy)
+        {
+            // 🚀 快速路径：向量搜索
+            try
+            {
+                var stopwatch = Stopwatch.StartNew();
+
+                // 生成查询向量
+                var queryVector = await _embeddingClient!.GenerateEmbeddingAsync(query, cancellationToken);
+
+                // 构建过滤条件
+                Dictionary<string, object>? filters = null;
+                if (typeFilter.HasValue)
+                {
+                    filters = new() { ["type"] = typeFilter.Value.ToString() };
+                }
+
+                // 向量相似度搜索
+                var vectorResults = await _vectorRepository!.SearchAsync(
+                    queryVector,
+                    topK,
+                    filters,
+                    cancellationToken);
+
+                // 加载完整记忆实体
+                var memories = new List<MemoryEntity>();
+                foreach (var result in vectorResults)
+                {
+                    var memory = await _memoryRepository.GetByIdAsync(result.MemoryId, cancellationToken);
+                    if (memory != null)
+                    {
+                        memories.Add(memory);
+                    }
+                }
+
+                stopwatch.Stop();
+                _logger.LogInformation(
+                    "✅ 向量搜索 '{Query}' 返回 {Count} 个结果（耗时 {ElapsedMs}ms）",
+                    query, memories.Count, stopwatch.ElapsedMilliseconds);
+
+                return memories;
+            }
+            catch (Exception ex)
+            {
+                _logger.LogWarning(ex, "向量搜索失败，降级到 LLM 评分");
+                // 继续执行降级逻辑
+            }
+        }
+
+        // 🐢 慢速路径：降级到 LLM 评分（原有逻辑）
+        _logger.LogWarning("向量数据库不可用或搜索失败，使用 LLM 评分（较慢）");
+
+        // 触发降级通知
+        OnFallbackToLLMScoring?.Invoke(
+            "⚠️ 向量搜索不可用，使用 LLM 评分（较慢，50-100秒）\n" +
+            "提示：启动 Qdrant 以获得 1000-10000 倍的性能提升（10-50ms）\n" +
+            "  docker run -p 6333:6333 qdrant/qdrant");
+
+        var stopwatch2 = Stopwatch.StartNew();
 
         try
         {
@@ -112,10 +188,11 @@ public sealed class MemoryRetrievalService : IMemoryRetrievalService
                 .Select(x => x.Memory)
                 .ToList();
 
+            stopwatch2.Stop();
+
             _logger.LogInformation(
-                "语义搜索 '{Query}' 返回 {Count} 个结果",
-                query,
-                results.Count);
+                "⚠️ LLM 评分搜索 '{Query}' 返回 {Count} 个结果（耗时 {ElapsedMs}ms）",
+                query, results.Count, stopwatch2.ElapsedMilliseconds);
 
             return results;
         }
