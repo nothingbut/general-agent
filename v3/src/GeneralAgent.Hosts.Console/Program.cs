@@ -9,6 +9,8 @@ using GeneralAgent.Infrastructure;
 using GeneralAgent.Infrastructure.LLM;
 using GeneralAgent.Infrastructure.Memory;
 using GeneralAgent.Infrastructure.Storage;
+using GeneralAgent.Infrastructure.Embedding;
+using GeneralAgent.Infrastructure.VectorDB;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
@@ -28,6 +30,8 @@ try
     // 2. 注册各层服务
     builder.Services.AddInfrastructure(connectionString);
     builder.Services.AddLLMInfrastructure(builder.Configuration);
+    builder.Services.AddEmbeddingInfrastructure(builder.Configuration);
+    builder.Services.AddVectorDB(builder.Configuration);
     builder.Services.AddMemoryServices(builder.Configuration);
     builder.Services.AddApplicationLayer(builder.Configuration);
     builder.Services.AddHostedService<BackgroundTaskService>();

@@ -12,6 +12,8 @@
     <ProjectReference Include="..\GeneralAgent.Infrastructure\GeneralAgent.Infrastructure.csproj" />
     <ProjectReference Include="..\GeneralAgent.Infrastructure.LLM\GeneralAgent.Infrastructure.LLM.csproj" />
     <ProjectReference Include="..\GeneralAgent.Infrastructure.Memory\GeneralAgent.Infrastructure.Memory.csproj" />
+    <ProjectReference Include="..\GeneralAgent.Infrastructure.Embedding\GeneralAgent.Infrastructure.Embedding.csproj" />
+    <ProjectReference Include="..\GeneralAgent.Infrastructure.VectorDB\GeneralAgent.Infrastructure.VectorDB.csproj" />
     <ProjectReference Include="..\GeneralAgent.Application\GeneralAgent.Application.csproj" />
   </ItemGroup>
 

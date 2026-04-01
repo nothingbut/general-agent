@@ -6,6 +6,7 @@ using GeneralAgent.Hosts.Console.Commands;
 using GeneralAgent.Hosts.Console.Services;
 using GeneralAgent.Infrastructure.LLM;
 using GeneralAgent.Infrastructure.Skills.Models;
+using GeneralAgent.Infrastructure.VectorDB;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Options;
 using Spectre.Console;
@@ -29,6 +30,9 @@ public class AgentRepl
     private readonly IMemoryIndexManager _memoryIndexManager;
     private readonly IMemoryExtractionService _memoryExtractionService;
     private readonly IMemoryRetrievalService _memoryRetrievalService;
+    private readonly IEmbeddingClient? _embeddingClient;
+    private readonly IVectorRepository? _vectorRepository;
+    private readonly VectorDBOptions? _vectorDBOptions;
     private readonly LLMOptions _llmOptions;
     private readonly ILogger<AgentRepl> _logger;
     private readonly ReplHistoryManager _historyManager;
@@ -52,7 +56,10 @@ public class AgentRepl
         IMemoryExtractionService memoryExtractionService,
         IMemoryRetrievalService memoryRetrievalService,
         IOptions<LLMOptions> llmOptions,
-        ILogger<AgentRepl> logger)
+        ILogger<AgentRepl> logger,
+        IEmbeddingClient? embeddingClient = null,
+        IVectorRepository? vectorRepository = null,
+        IOptions<VectorDBOptions>? vectorDBOptions = null)
     {
         _sessionService = sessionService;
         _conversationService = conversationService;
@@ -65,6 +72,9 @@ public class AgentRepl
         _memoryIndexManager = memoryIndexManager;
         _memoryExtractionService = memoryExtractionService;
         _memoryRetrievalService = memoryRetrievalService;
+        _embeddingClient = embeddingClient;
+        _vectorRepository = vectorRepository;
+        _vectorDBOptions = vectorDBOptions?.Value;
         _llmOptions = llmOptions.Value;
         _logger = logger;
 
@@ -1629,6 +1639,11 @@ public class AgentRepl
                     await RebuildMemoryIndexAsync(ct);
                     break;
 
+                case "migrate-to-vectors":
+                case "migrate":
+                    await MigrateMemoriesToVectorsAsync(ct);
+                    break;
+
                 case "help":
                     ShowMemoryHelp();
                     break;
@@ -2262,6 +2277,140 @@ public class AgentRepl
     }
 
     /// <summary>
+    /// 迁移现有记忆到向量数据库
+    /// </summary>
+    private async Task MigrateMemoriesToVectorsAsync(CancellationToken ct)
+    {
+        AnsiConsole.MarkupLine("[bold cyan]开始迁移现有记忆到向量数据库...[/]");
+
+        try
+        {
+            // 1. 检查依赖
+            if (_vectorRepository == null || _embeddingClient == null)
+            {
+                AnsiConsole.MarkupLine("[red]✗ 向量数据库或 Embedding 客户端未配置[/]");
+                AnsiConsole.MarkupLine("[dim]提示: 请检查 appsettings.json 中的 VectorDB 和 Embedding 配置[/]");
+                return;
+            }
+
+            // 2. 验证 Qdrant 健康状态
+            await AnsiConsole.Status()
+                .StartAsync("检查 Qdrant 健康状态...", async ctx =>
+                {
+                    var isHealthy = await _vectorRepository.IsHealthyAsync(ct);
+                    if (!isHealthy)
+                    {
+                        AnsiConsole.MarkupLine("[red]❌ Qdrant 未运行，请启动：[/]");
+                        AnsiConsole.MarkupLine("[dim]  docker run -d -p 6333:6333 qdrant/qdrant[/]");
+                        return;
+                    }
+
+                    AnsiConsole.MarkupLine("[green]✓ Qdrant 健康检查通过[/]");
+                });
+
+            // 如果健康检查失败，直接返回
+            if (!await _vectorRepository.IsHealthyAsync(ct))
+            {
+                return;
+            }
+
+            // 3. 扫描所有现有记忆文件
+            var allMemories = await AnsiConsole.Status()
+                .StartAsync("扫描现有记忆文件...", async ctx =>
+                {
+                    return await _memoryRepository.GetAllAsync(ct);
+                });
+
+            var total = allMemories.Count;
+            AnsiConsole.MarkupLine($"[green]✓ 扫描到 {total} 个现有记忆[/]");
+
+            if (total == 0)
+            {
+                AnsiConsole.MarkupLine("[yellow]没有需要迁移的记忆[/]");
+                return;
+            }
+
+            // 4. 分批处理（每批 10 个，避免 Ollama 过载）
+            var processed = 0;
+            var failed = 0;
+            var batchSize = 10;
+
+            await AnsiConsole.Progress()
+                .StartAsync(async ctx =>
+                {
+                    var task = ctx.AddTask("[cyan]迁移记忆[/]", maxValue: total);
+
+                    foreach (var batch in allMemories.Chunk(batchSize))
+                    {
+                        try
+                        {
+                            // 4.1 批量生成 Embedding
+                            var texts = batch.Select(m =>
+                                $"{m.Name} {m.Description} {m.Content}").ToList();
+
+                            var embeddings = await _embeddingClient.GenerateBatchEmbeddingsAsync(texts, ct);
+
+                            // 4.2 批量插入 Qdrant（并行）
+                            var tasks = batch.Zip(embeddings).Select(async pair =>
+                            {
+                                var (memory, embedding) = pair;
+                                var metadata = new Dictionary<string, object>
+                                {
+                                    ["memory_id"] = memory.Id.ToString(),
+                                    ["type"] = memory.Type.ToString(),
+                                    ["name"] = memory.Name,
+                                    ["description"] = memory.Description,
+                                    ["created_at"] = memory.CreatedAt.ToString("O")
+                                };
+                                await _vectorRepository.UpsertAsync(
+                                    memory.Id, embedding, metadata, ct);
+                            });
+
+                            await Task.WhenAll(tasks);
+
+                            processed += batch.Length;
+                        }
+                        catch (Exception ex)
+                        {
+                            _logger.LogError(ex, "批量迁移失败");
+                            failed += batch.Length;
+                        }
+
+                        // 4.3 更新进度
+                        task.Value = processed + failed;
+                    }
+                });
+
+            // 5. 迁移完成
+            AnsiConsole.WriteLine();
+            AnsiConsole.MarkupLine("[bold green]✅ 迁移完成！[/]");
+            var resultTable = new Table()
+                .Border(TableBorder.Rounded)
+                .AddColumn("项目")
+                .AddColumn("数量");
+
+            resultTable.AddRow("总计", $"{total} 个记忆");
+            resultTable.AddRow("成功", $"[green]{processed} 个[/]");
+            resultTable.AddRow("失败", failed > 0 ? $"[red]{failed} 个[/]" : $"{failed} 个");
+
+            AnsiConsole.Write(resultTable);
+
+            if (_vectorDBOptions != null)
+            {
+                AnsiConsole.MarkupLine($"[dim]向量存储: {_vectorDBOptions.Url}/collections/{_vectorDBOptions.CollectionName}[/]");
+            }
+
+            AnsiConsole.WriteLine();
+            AnsiConsole.MarkupLine("[bold]提示:[/] 现在可以使用 [cyan]/memory semantic-search[/] 进行高速语义搜索");
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "记忆迁移失败");
+            AnsiConsole.MarkupLine($"[red]❌ 迁移失败：{ex.Message}[/]");
+        }
+    }
+
+    /// <summary>
     /// 显示记忆命令帮助
     /// </summary>
     private void ShowMemoryHelp()
@@ -2283,6 +2432,7 @@ public class AgentRepl
         table.AddRow("[cyan]/memory hybrid-search <query>[/]", "混合搜索（关键词+语义）");
         table.AddRow("[cyan]/memory importance <name>[/]", "计算记忆重要性");
         table.AddRow("[cyan]/memory rebuild-index[/]", "重建记忆索引");
+        table.AddRow("[cyan]/memory migrate-to-vectors[/]", "迁移现有记忆到向量数据库");
 
         AnsiConsole.MarkupLine("[bold yellow]记忆管理命令：[/]");
         AnsiConsole.Write(table);
