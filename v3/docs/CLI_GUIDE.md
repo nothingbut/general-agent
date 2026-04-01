@@ -361,6 +361,75 @@ You> /exit
 
 ---
 
+## 🔍 记忆管理
+
+### 向量搜索（Vector Search）
+
+Phase 2 引入了向量搜索功能，将语义搜索性能提升 1000-10000 倍（从 50-100秒 降至 10-50毫秒）。
+
+#### 前置要求
+
+1. 启动 Qdrant 向量数据库：
+   ```bash
+   docker run -d --name qdrant -p 6333:6333 qdrant/qdrant
+   ```
+
+2. 确保 Ollama 运行并下载 Embedding 模型：
+   ```bash
+   ollama pull nomic-embed-text
+   ```
+
+#### 使用向量搜索
+
+```bash
+# 语义搜索（自动使用向量搜索）
+> /memory semantic-search "TDD测试"
+
+✅ 找到 3 个相关记忆（向量搜索，耗时 ~15ms）
+
+1. tdd_preference (相似度: 0.92)
+   描述: 喜欢使用 TDD 方法
+   类型: User
+
+2. unit_testing (相似度: 0.85)
+   描述: 单元测试最佳实践
+   类型: Knowledge
+```
+
+#### 迁移现有记忆
+
+如果你已经在 Phase 1 创建了记忆，需要迁移到向量数据库：
+
+```bash
+> /memory migrate-to-vectors
+
+开始迁移现有记忆到向量数据库...
+✓ Qdrant 健康检查通过
+✓ 扫描到 50 个现有记忆
+已迁移 10/50 (20%)...
+已迁移 20/50 (40%)...
+...
+✅ 迁移完成！
+  • 总计: 50 个记忆
+  • 成功: 50 个
+  • 失败: 0 个
+```
+
+#### 自动降级
+
+如果 Qdrant 不可用，系统会自动降级到关键词搜索（较慢但仍可用）：
+
+```bash
+> /memory semantic-search "测试"
+
+⚠️ 向量搜索不可用，使用关键词搜索（较慢）
+提示：启动 Qdrant: docker run -p 6333:6333 qdrant/qdrant
+
+⚠️ 找到 2 个相关记忆（关键词搜索，耗时 ~2s）
+```
+
+---
+
 ## 🔧 配置
 
 ### 配置文件

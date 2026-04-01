@@ -730,6 +730,61 @@ agent config reset --force
 
 ---
 
+### Memory 命令 🆕 (Phase 2)
+
+#### `/memory migrate-to-vectors`
+
+迁移现有记忆到向量数据库。
+
+**用法**：
+```bash
+/memory migrate-to-vectors
+```
+
+**前置要求**：
+- Qdrant 服务运行在 http://localhost:6333
+- Ollama 服务运行在 http://localhost:11434
+- nomic-embed-text 模型已下载
+
+**行为**：
+1. 验证 Qdrant 健康状态
+2. 扫描所有现有记忆文件
+3. 分批生成 Embedding 向量（每批 10 个）
+4. 批量插入 Qdrant
+5. 显示迁移进度和结果
+
+**注意事项**：
+- 迁移过程不会修改文件系统中的记忆
+- 向量数据库仅用于加速搜索
+- 迁移失败不会影响现有记忆
+
+#### `/memory semantic-search`
+
+使用向量搜索进行语义检索记忆。
+
+**用法**：
+```bash
+/memory semantic-search "<查询文本>"
+```
+
+**示例**：
+```bash
+# 语义搜索
+/memory semantic-search "TDD测试"
+
+# 搜索编程概念
+/memory semantic-search "函数式编程"
+```
+
+**性能**：
+- 向量搜索：10-50ms
+- 关键词搜索（降级）：1-5s
+
+**自动降级**：
+如果 Qdrant 不可用，系统会自动降级到关键词搜索。
+
+---
+
 ### 别名管理 🆕 (V3 Phase 5)
 
 | 命令 | 参数 | 说明 |
