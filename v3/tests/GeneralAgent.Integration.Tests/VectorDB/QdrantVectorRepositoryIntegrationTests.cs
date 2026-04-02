@@ -162,7 +162,7 @@ public sealed class QdrantVectorRepositoryIntegrationTests : IAsyncLifetime
     /// <summary>
     /// 测试：存储并搜索向量（端到端）
     /// </summary>
-    [Fact(Skip = "需要运行 Qdrant 服务: docker run -d -p 6333:6333 -p 6334:6334 qdrant/qdrant")]
+    [Fact]
     public async Task UpsertAndSearch_WorksEndToEnd()
     {
         // Arrange
@@ -199,7 +199,7 @@ public sealed class QdrantVectorRepositoryIntegrationTests : IAsyncLifetime
     /// <summary>
     /// 测试：使用过滤条件搜索
     /// </summary>
-    [Fact(Skip = "需要运行 Qdrant 服务: docker run -d -p 6333:6333 -p 6334:6334 qdrant/qdrant")]
+    [Fact]
     public async Task SearchWithFilter_ReturnsFilteredResults()
     {
         // Arrange
@@ -257,7 +257,7 @@ public sealed class QdrantVectorRepositoryIntegrationTests : IAsyncLifetime
     /// <summary>
     /// 测试：删除向量并验证
     /// </summary>
-    [Fact(Skip = "需要运行 Qdrant 服务: docker run -d -p 6333:6333 -p 6334:6334 qdrant/qdrant")]
+    [Fact]
     public async Task DeleteAndVerify_RemovesVector()
     {
         // Arrange
@@ -296,7 +296,7 @@ public sealed class QdrantVectorRepositoryIntegrationTests : IAsyncLifetime
     /// <summary>
     /// 测试：健康检查
     /// </summary>
-    [Fact(Skip = "需要运行 Qdrant 服务: docker run -d -p 6333:6333 -p 6334:6334 qdrant/qdrant")]
+    [Fact]
     public async Task IsHealthy_ReturnsTrue()
     {
         // Arrange
@@ -312,7 +312,7 @@ public sealed class QdrantVectorRepositoryIntegrationTests : IAsyncLifetime
     /// <summary>
     /// 测试：健康检查缓存
     /// </summary>
-    [Fact(Skip = "需要运行 Qdrant 服务: docker run -d -p 6333:6333 -p 6334:6334 qdrant/qdrant")]
+    [Fact]
     public async Task IsHealthy_UsesCaching()
     {
         // Arrange
@@ -340,7 +340,7 @@ public sealed class QdrantVectorRepositoryIntegrationTests : IAsyncLifetime
     /// <summary>
     /// 测试：获取集合统计信息
     /// </summary>
-    [Fact(Skip = "需要运行 Qdrant 服务: docker run -d -p 6333:6333 -p 6334:6334 qdrant/qdrant")]
+    [Fact]
     public async Task GetStats_ReturnsValidStats()
     {
         // Arrange
@@ -368,7 +368,7 @@ public sealed class QdrantVectorRepositoryIntegrationTests : IAsyncLifetime
     /// <summary>
     /// 测试：更新已存在的向量
     /// </summary>
-    [Fact(Skip = "需要运行 Qdrant 服务: docker run -d -p 6333:6333 -p 6334:6334 qdrant/qdrant")]
+    [Fact]
     public async Task Upsert_UpdatesExistingVector()
     {
         // Arrange
@@ -411,7 +411,7 @@ public sealed class QdrantVectorRepositoryIntegrationTests : IAsyncLifetime
     /// <summary>
     /// 测试：批量插入多个向量
     /// </summary>
-    [Fact(Skip = "需要运行 Qdrant 服务: docker run -d -p 6333:6333 -p 6334:6334 qdrant/qdrant")]
+    [Fact]
     public async Task UpsertMultipleVectors_AllSucceed()
     {
         // Arrange

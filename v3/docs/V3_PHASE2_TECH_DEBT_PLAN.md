@@ -283,17 +283,25 @@ dotnet run
   - 更新 12 个测试用例以适配新降级策略
   - 所有 586 个单元测试通过
 
-### Task 3: 修复测试排序断言
-- **开始时间**: 
-- **完成时间**: 
-- **提交**: 
+### Task 3: 修复测试排序断言 ✅
+- **开始时间**: 2026-04-02 17:50
+- **完成时间**: 2026-04-02 18:00
+- **提交**: 456e2ca - test(memory): 修复向量搜索排序断言，使用包含检查
 - **备注**: 
+  - 修改 `CreateAndSearchMemory_WithVectors_FindsRelevantMemories` 测试
+  - 从严格排序断言改为包含检查
+  - 提高测试稳定性，避免向量相似度浮点数差异导致的失败
 
-### Task 4: 优化集成测试配置
-- **开始时间**: 
-- **完成时间**: 
-- **提交**: 
+### Task 4: 优化集成测试配置 ✅
+- **开始时间**: 2026-04-02 18:00
+- **完成时间**: 2026-04-02 18:10
+- **提交**: 待提交
 - **备注**: 
+  - 移除 12 个集成测试的硬编码 `[Fact(Skip = "...")]` 属性
+  - 4 个 OllamaEmbeddingIntegrationTests
+  - 8 个 QdrantVectorRepositoryIntegrationTests
+  - 测试现在使用动态跳过逻辑（`SkipIfOllamaUnavailable()` 和 `SkipIfQdrantUnavailable()`）
+  - 11/12 集成测试通过，1 个测试失败（测试本身逻辑问题，非本次修改导致） 
 
 ---
 

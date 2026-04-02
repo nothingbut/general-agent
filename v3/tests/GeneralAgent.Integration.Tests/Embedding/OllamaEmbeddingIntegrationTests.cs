@@ -147,7 +147,7 @@ public sealed class OllamaEmbeddingIntegrationTests : IAsyncLifetime
     /// <summary>
     /// 测试：生成单个文本的 Embedding
     /// </summary>
-    [Fact(Skip = "需要本地 Ollama 服务和 nomic-embed-text 模型")]
+    [Fact]
     public async Task GenerateEmbedding_RealOllama_ReturnsValidVector()
     {
         // Arrange
@@ -169,7 +169,7 @@ public sealed class OllamaEmbeddingIntegrationTests : IAsyncLifetime
     /// <summary>
     /// 测试：中文文本 Embedding 生成
     /// </summary>
-    [Fact(Skip = "需要本地 Ollama 服务和 nomic-embed-text 模型")]
+    [Fact]
     public async Task GenerateEmbedding_ChineseText_WorksCorrectly()
     {
         // Arrange
@@ -195,7 +195,7 @@ public sealed class OllamaEmbeddingIntegrationTests : IAsyncLifetime
     /// <summary>
     /// 测试：批量生成 Embedding
     /// </summary>
-    [Fact(Skip = "需要本地 Ollama 服务和 nomic-embed-text 模型")]
+    [Fact]
     public async Task GenerateBatchEmbeddings_RealOllama_ReturnsBatch()
     {
         // Arrange
@@ -232,7 +232,7 @@ public sealed class OllamaEmbeddingIntegrationTests : IAsyncLifetime
     /// 测试：长文本 Embedding 生成
     /// 长文本定义为超过 1000 个字符的文本
     /// </summary>
-    [Fact(Skip = "需要本地 Ollama 服务和 nomic-embed-text 模型")]
+    [Fact]
     public async Task GenerateEmbedding_LongText_WorksCorrectly()
     {
         // Arrange
