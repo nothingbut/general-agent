@@ -135,56 +135,32 @@ public sealed class MemoryRetrievalService : IMemoryRetrievalService
             }
         }
 
-        // 🐢 慢速路径：降级到 LLM 评分（原有逻辑）
-        _logger.LogWarning("向量数据库不可用或搜索失败，使用 LLM 评分（较慢）");
+        // 🔍 中速路径：降级到关键词搜索（1-5秒）
+        _logger.LogWarning("向量数据库不可用或搜索失败，降级到关键词搜索");
 
         // 触发降级通知
         OnFallbackToLLMScoring?.Invoke(
-            "⚠️ 向量搜索不可用，使用 LLM 评分（较慢，50-100秒）\n" +
-            "提示：启动 Qdrant 以获得 1000-10000 倍的性能提升（10-50ms）\n" +
+            "⚠️ 向量搜索不可用，使用关键词搜索（1-5秒）\n" +
+            "提示：启动 Qdrant 以获得 100-1000 倍的性能提升（10-50ms）\n" +
             "  docker run -p 6333:6333 qdrant/qdrant");
 
         var stopwatch2 = Stopwatch.StartNew();
 
         try
         {
-            // 获取所有记忆（或按类型过滤）
-            var allMemories = typeFilter.HasValue
-                ? await _memoryRepository.GetByTypeAsync(typeFilter.Value, cancellationToken)
-                : await _memoryRepository.GetAllAsync(cancellationToken);
+            // 使用关键词搜索（更快的降级策略）
+            var keywordResults = await _memoryRepository.SearchAsync(
+                query,
+                typeFilter,
+                cancellationToken);
 
-            if (allMemories.Count == 0)
-            {
-                return new List<MemoryEntity>();
-            }
-
-            // 计算每个记忆的相关性评分
-            var scoredMemories = new List<(MemoryEntity Memory, double Score)>();
-
-            foreach (var memory in allMemories)
-            {
-                var score = await CalculateRelevanceScoreAsync(
-                    query,
-                    memory,
-                    cancellationToken);
-
-                if (score > 0.3) // 过滤掉低相关性的记忆
-                {
-                    scoredMemories.Add((memory, score));
-                }
-            }
-
-            // 按相关性排序并返回 topK
-            var results = scoredMemories
-                .OrderByDescending(x => x.Score)
-                .Take(topK)
-                .Select(x => x.Memory)
-                .ToList();
+            // 返回前 topK 个结果
+            var results = keywordResults.Take(topK).ToList();
 
             stopwatch2.Stop();
 
             _logger.LogInformation(
-                "⚠️ LLM 评分搜索 '{Query}' 返回 {Count} 个结果（耗时 {ElapsedMs}ms）",
+                "⚠️ 关键词搜索 '{Query}' 返回 {Count} 个结果（耗时 {ElapsedMs}ms）",
                 query, results.Count, stopwatch2.ElapsedMilliseconds);
 
             return results;

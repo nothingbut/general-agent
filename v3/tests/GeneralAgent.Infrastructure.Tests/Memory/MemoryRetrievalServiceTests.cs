@@ -40,36 +40,21 @@ public sealed class MemoryRetrievalServiceTests
     {
         // Arrange
         var query = "测试驱动开发";
-        var memories = new List<Core.Models.Memory>
+        var relevantMemories = new List<Core.Models.Memory>
         {
             Core.Models.Memory.Create(MemoryType.Feedback, "tdd_preference", "TDD 偏好", "用户喜欢 TDD"),
-            Core.Models.Memory.Create(MemoryType.Knowledge, "unit_testing", "单元测试", "单元测试最佳实践"),
-            Core.Models.Memory.Create(MemoryType.User, "user_name", "用户名", "张三")
+            Core.Models.Memory.Create(MemoryType.Knowledge, "unit_testing", "单元测试", "单元测试最佳实践")
         };
 
-        _mockRepository.GetAllAsync(Arg.Any<CancellationToken>())
-            .Returns(memories);
-
-        // Mock LLM 返回相关性评分
-        var callCount = 0;
-        _mockLlmClient.CompleteAsync(Arg.Any<CompletionRequest>(), Arg.Any<CancellationToken>())
-            .Returns(callInfo =>
-            {
-                var scores = new[] { 0.9, 0.7, 0.1 }; // tdd_preference, unit_testing, user_name
-                var score = scores[callCount++];
-                return new CompletionResponse
-                {
-                    Content = $"{{ \"score\": {score}, \"reason\": \"测试\" }}",
-                    Usage = new TokenUsage { PromptTokens = 50, CompletionTokens = 20 },
-                    Timestamp = DateTime.UtcNow
-                };
-            });
+        // Mock 关键词搜索返回相关记忆（降级路径）
+        _mockRepository.SearchAsync(query, null, Arg.Any<CancellationToken>())
+            .Returns(relevantMemories);
 
         // Act
         var results = await _service.SearchBySemanticAsync(query, topK: 5);
 
         // Assert
-        results.Should().HaveCount(2); // user_name 被过滤掉（< 0.3）
+        results.Should().HaveCount(2);
         results[0].Name.Should().Be("tdd_preference");
         results[1].Name.Should().Be("unit_testing");
     }
@@ -90,21 +75,11 @@ public sealed class MemoryRetrievalServiceTests
     {
         // Arrange
         var query = "测试";
-        var memories = new List<Core.Models.Memory>
-        {
-            Core.Models.Memory.Create(MemoryType.User, "user_info", "用户信息", "内容")
-        };
+        var userMemory = Core.Models.Memory.Create(MemoryType.User, "user_info", "用户信息", "内容");
 
-        _mockRepository.GetByTypeAsync(MemoryType.User, Arg.Any<CancellationToken>())
-            .Returns(memories);
-
-        _mockLlmClient.CompleteAsync(Arg.Any<CompletionRequest>(), Arg.Any<CancellationToken>())
-            .Returns(new CompletionResponse
-            {
-                Content = """{ "score": 0.8, "reason": "测试" }""",
-                Usage = new TokenUsage { PromptTokens = 50, CompletionTokens = 20 },
-                Timestamp = DateTime.UtcNow
-            });
+        // Mock 关键词搜索（带类型过滤）（降级路径）
+        _mockRepository.SearchAsync(query, MemoryType.User, Arg.Any<CancellationToken>())
+            .Returns(new List<Core.Models.Memory> { userMemory });
 
         // Act
         var results = await _service.SearchBySemanticAsync(query, typeFilter: MemoryType.User);
@@ -112,7 +87,7 @@ public sealed class MemoryRetrievalServiceTests
         // Assert
         results.Should().HaveCount(1);
         results[0].Type.Should().Be(MemoryType.User);
-        await _mockRepository.Received(1).GetByTypeAsync(MemoryType.User, Arg.Any<CancellationToken>());
+        await _mockRepository.Received(1).SearchAsync(query, MemoryType.User, Arg.Any<CancellationToken>());
     }
 
     [Fact]
@@ -124,27 +99,15 @@ public sealed class MemoryRetrievalServiceTests
             .Select(i => Core.Models.Memory.Create(MemoryType.User, $"memory_{i}", $"记忆{i}", $"内容{i}"))
             .ToList();
 
-        _mockRepository.GetAllAsync(Arg.Any<CancellationToken>())
+        // Mock 关键词搜索返回所有记忆（降级路径）
+        _mockRepository.SearchAsync(query, null, Arg.Any<CancellationToken>())
             .Returns(memories);
-
-        var callIndex = 0;
-        _mockLlmClient.CompleteAsync(Arg.Any<CompletionRequest>(), Arg.Any<CancellationToken>())
-            .Returns(callInfo =>
-            {
-                var score = 1.0 - (callIndex++ * 0.05); // 递减评分
-                return new CompletionResponse
-                {
-                    Content = $"{{ \"score\": {score}, \"reason\": \"测试\" }}",
-                    Usage = new TokenUsage { PromptTokens = 50, CompletionTokens = 20 },
-                    Timestamp = DateTime.UtcNow
-                };
-            });
 
         // Act
         var results = await _service.SearchBySemanticAsync(query, topK: 3);
 
         // Assert
-        results.Should().HaveCount(3);
+        results.Should().HaveCount(3); // 应该只返回前 3 个
     }
 
     [Fact]
@@ -158,16 +121,9 @@ public sealed class MemoryRetrievalServiceTests
             Core.Models.Memory.Create(MemoryType.Knowledge, "testing", "测试", "测试最佳实践")
         };
 
-        _mockRepository.GetAllAsync(Arg.Any<CancellationToken>())
+        // Mock 关键词搜索返回相关记忆（降级路径）
+        _mockRepository.SearchAsync(context, null, Arg.Any<CancellationToken>())
             .Returns(memories);
-
-        _mockLlmClient.CompleteAsync(Arg.Any<CompletionRequest>(), Arg.Any<CancellationToken>())
-            .Returns(new CompletionResponse
-            {
-                Content = """{ "score": 0.8, "reason": "测试" }""",
-                Usage = new TokenUsage { PromptTokens = 50, CompletionTokens = 20 },
-                Timestamp = DateTime.UtcNow
-            });
 
         // Act
         var results = await _service.GetRelevantMemoriesAsync(context, topK: 3);
@@ -281,38 +237,22 @@ public sealed class MemoryRetrievalServiceTests
     }
 
     [Fact]
-    public async Task SearchBySemanticAsync_ShouldFilterLowRelevanceMemories()
+    public async Task SearchBySemanticAsync_WithKeywordSearch_ReturnsMatchingMemories()
     {
         // Arrange
         var query = "测试";
-        var memories = new List<Core.Models.Memory>
-        {
-            Core.Models.Memory.Create(MemoryType.User, "high", "高相关", "内容"),
-            Core.Models.Memory.Create(MemoryType.User, "low", "低相关", "内容")
-        };
+        var matchingMemory = Core.Models.Memory.Create(MemoryType.User, "relevant", "测试相关", "测试内容");
 
-        _mockRepository.GetAllAsync(Arg.Any<CancellationToken>())
-            .Returns(memories);
-
-        var callCount = 0;
-        _mockLlmClient.CompleteAsync(Arg.Any<CompletionRequest>(), Arg.Any<CancellationToken>())
-            .Returns(callInfo =>
-            {
-                var score = callCount++ == 0 ? 0.8 : 0.2; // 第一个高，第二个低
-                return new CompletionResponse
-                {
-                    Content = $"{{ \"score\": {score}, \"reason\": \"测试\" }}",
-                    Usage = new TokenUsage { PromptTokens = 50, CompletionTokens = 20 },
-                    Timestamp = DateTime.UtcNow
-                };
-            });
+        // Mock 关键词搜索只返回匹配的记忆（降级路径）
+        _mockRepository.SearchAsync(query, null, Arg.Any<CancellationToken>())
+            .Returns(new List<Core.Models.Memory> { matchingMemory });
 
         // Act
         var results = await _service.SearchBySemanticAsync(query);
 
         // Assert
         results.Should().HaveCount(1);
-        results[0].Name.Should().Be("high");
+        results[0].Name.Should().Be("relevant");
     }
 }
 
@@ -414,8 +354,8 @@ public sealed class MemoryRetrievalServiceVectorSearchTests
             null,
             Arg.Any<Func<object, Exception?, string>>());
 
-        // 不应降级到 LLM 评分
-        await _mockRepository.DidNotReceive().GetAllAsync(Arg.Any<CancellationToken>());
+        // 不应降级到关键词搜索
+        await _mockRepository.DidNotReceive().SearchAsync(Arg.Any<string>(), Arg.Any<MemoryType?>(), Arg.Any<CancellationToken>());
         await _mockLlmClient.DidNotReceive().CompleteAsync(Arg.Any<CompletionRequest>(), Arg.Any<CancellationToken>());
     }
 
@@ -487,7 +427,7 @@ public sealed class MemoryRetrievalServiceVectorSearchTests
     }
 
     [Fact]
-    public async Task SearchBySemanticAsync_ShouldFallbackToLLM_WhenHealthCheckFails()
+    public async Task SearchBySemanticAsync_ShouldFallbackToKeywordSearch_WhenHealthCheckFails()
     {
         // Arrange
         var service = CreateServiceWithVectorSupport();
@@ -501,53 +441,46 @@ public sealed class MemoryRetrievalServiceVectorSearchTests
         _mockVectorRepository.IsHealthyAsync(Arg.Any<CancellationToken>())
             .Returns(false);
 
-        // Mock LLM 评分路径
-        _mockRepository.GetAllAsync(Arg.Any<CancellationToken>())
+        // Mock 关键词搜索路径
+        _mockRepository.SearchAsync(query, null, Arg.Any<CancellationToken>())
             .Returns(new List<Core.Models.Memory> { memory });
-
-        _mockLlmClient.CompleteAsync(Arg.Any<CompletionRequest>(), Arg.Any<CancellationToken>())
-            .Returns(new CompletionResponse
-            {
-                Content = """{ "score": 0.8, "reason": "测试" }""",
-                Usage = new TokenUsage { PromptTokens = 50, CompletionTokens = 20 },
-                Timestamp = DateTime.UtcNow
-            });
 
         // Act
         var results = await service.SearchBySemanticAsync(query);
 
         // Assert
         results.Should().HaveCount(1);
+        results[0].Name.Should().Be("test");
 
         // 验证降级通知事件
         fallbackMessage.Should().NotBeNullOrEmpty();
         fallbackMessage.Should().Contain("向量搜索不可用");
-        fallbackMessage.Should().Contain("LLM 评分");
+        fallbackMessage.Should().Contain("关键词搜索");
         fallbackMessage.Should().Contain("Qdrant");
 
         // 验证降级警告日志
         _mockLogger.Received().Log(
             LogLevel.Warning,
             Arg.Any<EventId>(),
-            Arg.Is<object>(o => o.ToString()!.Contains("向量数据库不可用")),
+            Arg.Is<object>(o => o.ToString()!.Contains("向量数据库不可用") || o.ToString()!.Contains("降级到关键词搜索")),
             null,
             Arg.Any<Func<object, Exception?, string>>());
 
-        // 验证使用 LLM 评分路径
-        await _mockRepository.Received(1).GetAllAsync(Arg.Any<CancellationToken>());
-        await _mockLlmClient.Received(1).CompleteAsync(Arg.Any<CompletionRequest>(), Arg.Any<CancellationToken>());
+        // 验证使用关键词搜索路径
+        await _mockRepository.Received(1).SearchAsync(query, null, Arg.Any<CancellationToken>());
 
-        // 不应调用向量搜索
+        // 不应调用向量搜索和 LLM
         await _mockEmbeddingClient.DidNotReceive().GenerateEmbeddingAsync(Arg.Any<string>(), Arg.Any<CancellationToken>());
         await _mockVectorRepository.DidNotReceive().SearchAsync(
             Arg.Any<float[]>(),
             Arg.Any<int>(),
             Arg.Any<Dictionary<string, object>>(),
             Arg.Any<CancellationToken>());
+        await _mockLlmClient.DidNotReceive().CompleteAsync(Arg.Any<CompletionRequest>(), Arg.Any<CancellationToken>());
     }
 
     [Fact]
-    public async Task SearchBySemanticAsync_ShouldFallbackToLLM_WhenVectorSearchThrows()
+    public async Task SearchBySemanticAsync_ShouldFallbackToKeywordSearch_WhenVectorSearchThrows()
     {
         // Arrange
         var service = CreateServiceWithVectorSupport();
@@ -573,39 +506,35 @@ public sealed class MemoryRetrievalServiceVectorSearchTests
                 Arg.Any<CancellationToken>())
             .Throws(new InvalidOperationException("向量数据库连接失败"));
 
-        // Mock LLM 评分路径
-        _mockRepository.GetAllAsync(Arg.Any<CancellationToken>())
+        // Mock 关键词搜索路径
+        _mockRepository.SearchAsync(query, null, Arg.Any<CancellationToken>())
             .Returns(new List<Core.Models.Memory> { memory });
-
-        _mockLlmClient.CompleteAsync(Arg.Any<CompletionRequest>(), Arg.Any<CancellationToken>())
-            .Returns(new CompletionResponse
-            {
-                Content = """{ "score": 0.7, "reason": "测试" }""",
-                Usage = new TokenUsage { PromptTokens = 50, CompletionTokens = 20 },
-                Timestamp = DateTime.UtcNow
-            });
 
         // Act
         var results = await service.SearchBySemanticAsync(query);
 
         // Assert
         results.Should().HaveCount(1);
+        results[0].Name.Should().Be("test");
 
         // 验证降级通知事件
         fallbackMessage.Should().NotBeNullOrEmpty();
         fallbackMessage.Should().Contain("向量搜索不可用");
+        fallbackMessage.Should().Contain("关键词搜索");
 
         // 验证异常日志
         _mockLogger.Received().Log(
             LogLevel.Warning,
             Arg.Any<EventId>(),
-            Arg.Is<object>(o => o.ToString()!.Contains("向量搜索失败")),
+            Arg.Is<object>(o => o.ToString()!.Contains("向量搜索失败") || o.ToString()!.Contains("降级到关键词搜索")),
             Arg.Any<Exception>(),
             Arg.Any<Func<object, Exception?, string>>());
 
-        // 验证使用 LLM 评分路径
-        await _mockRepository.Received(1).GetAllAsync(Arg.Any<CancellationToken>());
-        await _mockLlmClient.Received(1).CompleteAsync(Arg.Any<CompletionRequest>(), Arg.Any<CancellationToken>());
+        // 验证使用关键词搜索路径
+        await _mockRepository.Received(1).SearchAsync(query, null, Arg.Any<CancellationToken>());
+
+        // 不应调用 LLM
+        await _mockLlmClient.DidNotReceive().CompleteAsync(Arg.Any<CompletionRequest>(), Arg.Any<CancellationToken>());
     }
 
     [Fact]
@@ -622,17 +551,9 @@ public sealed class MemoryRetrievalServiceVectorSearchTests
         var query = "测试";
         var memory = Core.Models.Memory.Create(MemoryType.User, "test", "测试", "内容");
 
-        // Mock LLM 评分路径
-        _mockRepository.GetAllAsync(Arg.Any<CancellationToken>())
+        // Mock 关键词搜索路径
+        _mockRepository.SearchAsync(query, null, Arg.Any<CancellationToken>())
             .Returns(new List<Core.Models.Memory> { memory });
-
-        _mockLlmClient.CompleteAsync(Arg.Any<CompletionRequest>(), Arg.Any<CancellationToken>())
-            .Returns(new CompletionResponse
-            {
-                Content = """{ "score": 0.8, "reason": "测试" }""",
-                Usage = new TokenUsage { PromptTokens = 50, CompletionTokens = 20 },
-                Timestamp = DateTime.UtcNow
-            });
 
         // Act
         var results = await serviceWithoutEmbedding.SearchBySemanticAsync(query);
@@ -643,8 +564,8 @@ public sealed class MemoryRetrievalServiceVectorSearchTests
         // 不应尝试健康检查
         await _mockVectorRepository.DidNotReceive().IsHealthyAsync(Arg.Any<CancellationToken>());
 
-        // 直接使用 LLM 评分
-        await _mockRepository.Received(1).GetAllAsync(Arg.Any<CancellationToken>());
+        // 直接使用关键词搜索
+        await _mockRepository.Received(1).SearchAsync(query, null, Arg.Any<CancellationToken>());
     }
 
     [Fact]
@@ -661,17 +582,9 @@ public sealed class MemoryRetrievalServiceVectorSearchTests
         var query = "测试";
         var memory = Core.Models.Memory.Create(MemoryType.User, "test", "测试", "内容");
 
-        // Mock LLM 评分路径
-        _mockRepository.GetAllAsync(Arg.Any<CancellationToken>())
+        // Mock 关键词搜索路径
+        _mockRepository.SearchAsync(query, null, Arg.Any<CancellationToken>())
             .Returns(new List<Core.Models.Memory> { memory });
-
-        _mockLlmClient.CompleteAsync(Arg.Any<CompletionRequest>(), Arg.Any<CancellationToken>())
-            .Returns(new CompletionResponse
-            {
-                Content = """{ "score": 0.8, "reason": "测试" }""",
-                Usage = new TokenUsage { PromptTokens = 50, CompletionTokens = 20 },
-                Timestamp = DateTime.UtcNow
-            });
 
         // Act
         var results = await serviceWithoutVector.SearchBySemanticAsync(query);
@@ -682,8 +595,8 @@ public sealed class MemoryRetrievalServiceVectorSearchTests
         // 不应尝试生成 Embedding
         await _mockEmbeddingClient.DidNotReceive().GenerateEmbeddingAsync(Arg.Any<string>(), Arg.Any<CancellationToken>());
 
-        // 直接使用 LLM 评分
-        await _mockRepository.Received(1).GetAllAsync(Arg.Any<CancellationToken>());
+        // 直接使用关键词搜索
+        await _mockRepository.Received(1).SearchAsync(query, null, Arg.Any<CancellationToken>());
     }
 
     [Fact]
@@ -743,31 +656,24 @@ public sealed class MemoryRetrievalServiceVectorSearchTests
         _mockVectorRepository.IsHealthyAsync(Arg.Any<CancellationToken>())
             .Returns(false);
 
-        // Mock LLM 评分路径（按类型过滤）
-        _mockRepository.GetByTypeAsync(MemoryType.User, Arg.Any<CancellationToken>())
+        // Mock 关键词搜索路径（按类型过滤）
+        _mockRepository.SearchAsync(query, MemoryType.User, Arg.Any<CancellationToken>())
             .Returns(new List<Core.Models.Memory> { memory });
-
-        _mockLlmClient.CompleteAsync(Arg.Any<CompletionRequest>(), Arg.Any<CancellationToken>())
-            .Returns(new CompletionResponse
-            {
-                Content = """{ "score": 0.8, "reason": "测试" }""",
-                Usage = new TokenUsage { PromptTokens = 50, CompletionTokens = 20 },
-                Timestamp = DateTime.UtcNow
-            });
 
         // Act
         var results = await service.SearchBySemanticAsync(query, typeFilter: MemoryType.User);
 
         // Assert
         results.Should().HaveCount(1);
+        results[0].Name.Should().Be("test");
 
-        // 验证使用按类型过滤的仓储方法
-        await _mockRepository.Received(1).GetByTypeAsync(MemoryType.User, Arg.Any<CancellationToken>());
-        await _mockRepository.DidNotReceive().GetAllAsync(Arg.Any<CancellationToken>());
+        // 验证使用关键词搜索（带类型过滤）
+        await _mockRepository.Received(1).SearchAsync(query, MemoryType.User, Arg.Any<CancellationToken>());
+        await _mockLlmClient.DidNotReceive().CompleteAsync(Arg.Any<CompletionRequest>(), Arg.Any<CancellationToken>());
     }
 
     [Fact]
-    public async Task OnFallbackToLLMScoring_ShouldContainHelpfulMessage()
+    public async Task OnFallbackToKeywordSearch_ShouldContainHelpfulMessage()
     {
         // Arrange
         var service = CreateServiceWithVectorSupport();
@@ -779,7 +685,7 @@ public sealed class MemoryRetrievalServiceVectorSearchTests
         _mockVectorRepository.IsHealthyAsync(Arg.Any<CancellationToken>())
             .Returns(false);
 
-        _mockRepository.GetAllAsync(Arg.Any<CancellationToken>())
+        _mockRepository.SearchAsync(query, null, Arg.Any<CancellationToken>())
             .Returns(new List<Core.Models.Memory>());
 
         // Act
@@ -789,12 +695,11 @@ public sealed class MemoryRetrievalServiceVectorSearchTests
         capturedMessage.Should().NotBeNullOrEmpty();
         capturedMessage.Should().Contain("⚠️");
         capturedMessage.Should().Contain("向量搜索不可用");
-        capturedMessage.Should().Contain("LLM 评分");
-        capturedMessage.Should().Contain("较慢");
-        capturedMessage.Should().Contain("50-100秒");
+        capturedMessage.Should().Contain("关键词搜索");
+        capturedMessage.Should().Contain("1-5秒");
         capturedMessage.Should().Contain("Qdrant");
         capturedMessage.Should().Contain("docker run");
         capturedMessage.Should().Contain("10-50ms");
-        capturedMessage.Should().Contain("1000-10000 倍");
+        capturedMessage.Should().Contain("100-1000 倍");
     }
 }
