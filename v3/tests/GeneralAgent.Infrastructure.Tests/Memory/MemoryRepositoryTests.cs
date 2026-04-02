@@ -166,6 +166,96 @@ public class MemoryRepositoryTests : IDisposable
 
     #endregion
 
+    #region GetByIdsAsync Tests
+
+    [Fact]
+    public async Task GetByIdsAsync_WithValidIds_ShouldReturnAllMatchingMemories()
+    {
+        // Arrange
+        var memory1 = Core.Models.Memory.Create(MemoryType.User, "m1", "d1", "c1");
+        var memory2 = Core.Models.Memory.Create(MemoryType.User, "m2", "d2", "c2");
+        var memory3 = Core.Models.Memory.Create(MemoryType.Feedback, "m3", "d3", "c3");
+
+        await _repository.SaveAsync(memory1);
+        await _repository.SaveAsync(memory2);
+        await _repository.SaveAsync(memory3);
+
+        var ids = new[] { memory1.Id, memory3.Id };
+
+        // Act
+        var result = await _repository.GetByIdsAsync(ids);
+
+        // Assert
+        result.Should().HaveCount(2);
+        result.Select(m => m.Id).Should().BeEquivalentTo(new[] { memory1.Id, memory3.Id });
+        result.Select(m => m.Name).Should().BeEquivalentTo(new[] { "m1", "m3" });
+    }
+
+    [Fact]
+    public async Task GetByIdsAsync_WithEmptyList_ShouldReturnEmptyList()
+    {
+        // Arrange
+        await _repository.SaveAsync(Core.Models.Memory.Create(MemoryType.User, "m1", "d", "c"));
+
+        // Act
+        var result = await _repository.GetByIdsAsync(Array.Empty<Guid>());
+
+        // Assert
+        result.Should().BeEmpty();
+    }
+
+    [Fact]
+    public async Task GetByIdsAsync_WithNonExistentIds_ShouldReturnOnlyExisting()
+    {
+        // Arrange
+        var memory1 = Core.Models.Memory.Create(MemoryType.User, "m1", "d", "c");
+        await _repository.SaveAsync(memory1);
+
+        var nonExistentId = Guid.NewGuid();
+        var ids = new[] { memory1.Id, nonExistentId };
+
+        // Act
+        var result = await _repository.GetByIdsAsync(ids);
+
+        // Assert
+        result.Should().HaveCount(1);
+        result[0].Id.Should().Be(memory1.Id);
+    }
+
+    [Fact]
+    public async Task GetByIdsAsync_WithDuplicateIds_ShouldReturnUniqueMemories()
+    {
+        // Arrange
+        var memory = Core.Models.Memory.Create(MemoryType.Project, "m1", "d", "c");
+        await _repository.SaveAsync(memory);
+
+        var ids = new[] { memory.Id, memory.Id, memory.Id }; // Duplicate IDs
+
+        // Act
+        var result = await _repository.GetByIdsAsync(ids);
+
+        // Assert
+        result.Should().HaveCount(1);
+        result[0].Id.Should().Be(memory.Id);
+    }
+
+    [Fact]
+    public async Task GetByIdsAsync_WithAllNonExistentIds_ShouldReturnEmptyList()
+    {
+        // Arrange
+        await _repository.SaveAsync(Core.Models.Memory.Create(MemoryType.User, "m1", "d", "c"));
+
+        var nonExistentIds = new[] { Guid.NewGuid(), Guid.NewGuid() };
+
+        // Act
+        var result = await _repository.GetByIdsAsync(nonExistentIds);
+
+        // Assert
+        result.Should().BeEmpty();
+    }
+
+    #endregion
+
     #region GetByNameAsync Tests
 
     [Fact]

@@ -383,11 +383,11 @@ public sealed class MemoryRetrievalServiceVectorSearchTests
                 Arg.Any<CancellationToken>())
             .Returns(vectorResults);
 
-        // Mock 记忆加载
-        _mockRepository.GetByIdAsync(memory1.Id, Arg.Any<CancellationToken>())
-            .Returns(memory1);
-        _mockRepository.GetByIdAsync(memory2.Id, Arg.Any<CancellationToken>())
-            .Returns(memory2);
+        // Mock 批量记忆加载
+        _mockRepository.GetByIdsAsync(
+                Arg.Is<IEnumerable<Guid>>(ids => ids.Contains(memory1.Id) && ids.Contains(memory2.Id)),
+                Arg.Any<CancellationToken>())
+            .Returns(new List<Core.Models.Memory> { memory1, memory2 });
 
         // Act
         var results = await service.SearchBySemanticAsync(query, topK: 5);
@@ -717,10 +717,11 @@ public sealed class MemoryRetrievalServiceVectorSearchTests
                 Arg.Any<CancellationToken>())
             .Returns(vectorResults);
 
-        _mockRepository.GetByIdAsync(memory1.Id, Arg.Any<CancellationToken>())
-            .Returns(memory1);
-        _mockRepository.GetByIdAsync(missingId, Arg.Any<CancellationToken>())
-            .Returns((Core.Models.Memory?)null); // 记忆不存在
+        // Mock 批量记忆加载 - 只返回存在的记忆
+        _mockRepository.GetByIdsAsync(
+                Arg.Is<IEnumerable<Guid>>(ids => ids.Contains(memory1.Id) && ids.Contains(missingId)),
+                Arg.Any<CancellationToken>())
+            .Returns(new List<Core.Models.Memory> { memory1 }); // 只返回存在的记忆
 
         // Act
         var results = await service.SearchBySemanticAsync(query);

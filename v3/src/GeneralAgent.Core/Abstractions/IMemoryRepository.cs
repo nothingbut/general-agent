@@ -18,6 +18,11 @@ public interface IMemoryRepository
     Task<Memory?> GetByIdAsync(Guid id, CancellationToken cancellationToken = default);
 
     /// <summary>
+    /// 批量根据 ID 获取记忆（优化 N+1 查询）
+    /// </summary>
+    Task<List<Memory>> GetByIdsAsync(IEnumerable<Guid> ids, CancellationToken cancellationToken = default);
+
+    /// <summary>
     /// 根据名称和类型获取记忆
     /// </summary>
     Task<Memory?> GetByNameAsync(

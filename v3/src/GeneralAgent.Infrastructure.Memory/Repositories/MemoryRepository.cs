@@ -109,6 +109,13 @@ public class MemoryRepository : IMemoryRepository
         return allMemories.FirstOrDefault(m => m.Id == id);
     }
 
+    public async Task<List<Core.Models.Memory>> GetByIdsAsync(IEnumerable<Guid> ids, CancellationToken cancellationToken = default)
+    {
+        var idSet = ids.ToHashSet();
+        var allMemories = await GetAllAsync(cancellationToken);
+        return allMemories.Where(m => idSet.Contains(m.Id)).ToList();
+    }
+
     public async Task<Core.Models.Memory?> GetByNameAsync(
         string name,
         MemoryType type,

@@ -117,16 +117,9 @@ public sealed class MemoryRetrievalService : IMemoryRetrievalService
                     filters,
                     cancellationToken);
 
-                // 加载完整记忆实体
-                var memories = new List<MemoryEntity>();
-                foreach (var result in vectorResults)
-                {
-                    var memory = await _memoryRepository.GetByIdAsync(result.MemoryId, cancellationToken);
-                    if (memory != null)
-                    {
-                        memories.Add(memory);
-                    }
-                }
+                // 加载完整记忆实体（批量加载优化）
+                var memoryIds = vectorResults.Select(r => r.MemoryId).ToList();
+                var memories = await _memoryRepository.GetByIdsAsync(memoryIds, cancellationToken);
 
                 stopwatch.Stop();
                 _logger.LogInformation(
