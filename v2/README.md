@@ -216,11 +216,11 @@ agent chat <session-id> --stream
 
 ## 📚 文档
 
+- [文档索引](docs/README.md) - 完整文档导航
 - [架构设计](docs/ARCHITECTURE.md) - 详细的架构说明
 - [技能系统](docs/SKILLS.md) - 技能系统使用指南
-- [API 文档](docs/API.md) - 公共 API 文档
-- [开发指南](docs/DEVELOPMENT.md) - 贡献指南
-- [交接文档](docs/progress/session-handoff.md) - 项目交接
+- [API 文档](docs/api/api-reference.md) - 公共 API 文档
+- [部署指南](docs/DEPLOYMENT.md) - 生产环境部署
 - [Phase 2 路线图](docs/plans/v2-phase2-roadmap.md) - 后续计划
 
 ---

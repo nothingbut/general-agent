@@ -53,7 +53,7 @@ Agent：[自动调用 @greeting user_name='张三']
 }
 ```
 
-📖 **详细文档**：[Tool Calling 使用指南](./docs/tool-calling.md)
+📖 **详细文档**：[Tool Calling 使用指南](./docs/features/tool-calling.md)
 
 ## 目标场景
 
@@ -74,8 +74,9 @@ Agent：[自动调用 @greeting user_name='张三']
 
 ## 相关文档
 
-- [技能系统指南](./docs/SKILLS_GUIDE.md) - 如何创建和使用技能
-- [Tool Calling 指南](./docs/tool-calling.md) - Tool Calling 完整文档
+- [文档索引](./docs/README.md) - 完整文档导航
+- [技能系统指南](./docs/guides/SKILLS_GUIDE.md) - 如何创建和使用技能
+- [Tool Calling 指南](./docs/features/tool-calling.md) - Tool Calling 完整文档
 - [技能示例](./skills/README.md) - 预定义技能集合
 
 ---

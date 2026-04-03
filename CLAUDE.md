@@ -420,10 +420,10 @@ cargo build
 
 ## 相关文档
 
-- 技能系统：`docs/skills.md`
-- MCP 集成：`docs/mcp.md`
-- RAG 使用：`docs/RAG_GUIDE.md`
-- TUI 指南：`docs/tui.md`
+- 技能系统：`docs/guides/skills-guide.md`
+- MCP 集成：`docs/guides/mcp-guide.md`
+- RAG 使用：`docs/guides/rag-guide.md`
+- TUI 指南：`docs/guides/tui-guide.md`
 - Subagent 系统：`docs/features/subagent-system.md`
 - Workflow 系统：`docs/plans/2026-03-06-phase7-agent-workflow.md`
 - Rust V2 架构：`v2/docs/ARCHITECTURE.md`
