@@ -11,6 +11,7 @@ using GeneralAgent.Infrastructure.Memory;
 using GeneralAgent.Infrastructure.Storage;
 using GeneralAgent.Infrastructure.Embedding;
 using GeneralAgent.Infrastructure.VectorDB;
+using GeneralAgent.Infrastructure.FileStorage.Extensions;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
@@ -33,6 +34,7 @@ try
     builder.Services.AddEmbeddingInfrastructure(builder.Configuration);
     builder.Services.AddVectorDB(builder.Configuration);
     builder.Services.AddMemoryServices(builder.Configuration);
+    builder.Services.AddFileStorage();
     builder.Services.AddApplicationLayer(builder.Configuration);
     builder.Services.AddHostedService<BackgroundTaskService>();
 

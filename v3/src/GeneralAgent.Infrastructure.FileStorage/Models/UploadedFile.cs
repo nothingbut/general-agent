@@ -3,7 +3,7 @@ namespace GeneralAgent.Infrastructure.FileStorage.Models;
 /// <summary>
 /// 上传文件模型
 /// </summary>
-public class UploadedFile
+public record UploadedFile
 {
     /// <summary>
     /// 文件 ID
