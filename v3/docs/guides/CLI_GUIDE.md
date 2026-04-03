@@ -143,6 +143,79 @@ agent skill run personal:greeting user_name="张三" time_of_day="上午"
 agent skill run productivity:task title="Review PR #123" priority="high" due_date="2026-03-25"
 ```
 
+### 文件管理
+
+#### 上传文件
+
+```bash
+# 上传文件到当前会话
+agent file upload /path/to/document.txt
+
+# 上传并自动提取到记忆
+agent file upload config.json --to-memory
+```
+
+**支持的文件类型**：文本文件（.txt, .md）、代码文件（.cs, .py, .js 等）、配置文件（.json, .yaml）等
+
+**文件限制**：最大 5 MB，内容长度最大 10,000 字符
+
+#### 列出文件
+
+```bash
+# 表格视图（默认）
+agent file list
+
+# JSON 视图
+agent file list --format json
+```
+
+#### 查看文件详情
+
+```bash
+# 使用文件 ID
+agent file show abc12345-1234-1234-1234-123456789abc
+
+# 支持短 ID
+agent file show abc12345
+```
+
+#### 查看文件内容
+
+```bash
+# 查看完整内容
+agent file content <file-id>
+
+# 限制显示行数
+agent file content <file-id> --lines 50
+```
+
+#### 删除文件
+
+```bash
+# 交互式确认
+agent file delete <file-id>
+
+# 跳过确认
+agent file delete <file-id> --force
+```
+
+#### 在对话中引用文件
+
+上传文件后，可以使用 `@file:` 语法在对话中引用：
+
+```bash
+# 按文件名引用
+agent chat "请分析 @file:config.json 中的配置"
+
+# 按文件 ID 引用
+agent chat "请查看 @file:abc12345"
+
+# 引用多个文件
+agent chat "比较 @file:config.json 和 @file:config.prod.json 的差异"
+```
+
+更多信息请参考 [文件上传用户指南](FILE_UPLOAD_USER_GUIDE.md)。
+
 ### 配置管理
 
 #### 查看配置
