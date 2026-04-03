@@ -1,3 +1,4 @@
+using GeneralAgent.Infrastructure.FileStorage.Parsers;
 using GeneralAgent.Infrastructure.FileStorage.Processors;
 using GeneralAgent.Infrastructure.FileStorage.Repositories;
 using GeneralAgent.Infrastructure.FileStorage.Services;
@@ -41,6 +42,9 @@ public static class ServiceCollectionExtensions
 
         // 注册文件存储服务
         services.TryAddSingleton<FileStorageService>();
+
+        // 注册文件引用解析器
+        services.TryAddSingleton<FileReferenceParser>();
 
         return services;
     }

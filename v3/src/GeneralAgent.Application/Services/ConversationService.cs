@@ -1,6 +1,7 @@
 using System.Runtime.CompilerServices;
 using GeneralAgent.Core.Abstractions;
 using GeneralAgent.Core.Models;
+using GeneralAgent.Infrastructure.FileStorage.Parsers;
 using Microsoft.Extensions.Logging;
 
 namespace GeneralAgent.Application.Services;
@@ -11,6 +12,7 @@ namespace GeneralAgent.Application.Services;
 /// 职责：
 /// - 显式技能调用 (@skill, /skill) → ToolExecutor
 /// - 隐式工具调用 → ToolCallingOrchestrator
+/// - 文件引用解析 (@file:) → FileReferenceParser
 /// - 处理 Message ↔ ChatMessage 转换
 /// - 管理会话历史
 /// - 提供非流式和流式对话方法
@@ -22,6 +24,7 @@ public sealed class ConversationService
     private readonly ILLMClientFactory _llmClientFactory;
     private readonly ToolCallingOrchestrator _orchestrator;
     private readonly ToolExecutor _toolExecutor;
+    private readonly FileReferenceParser? _fileReferenceParser;
     private readonly ILogger<ConversationService> _logger;
 
     private const string DefaultSystemPrompt = "你是一个有帮助的 AI 助手。";
@@ -35,7 +38,8 @@ public sealed class ConversationService
         ILLMClientFactory llmClientFactory,
         ToolCallingOrchestrator orchestrator,
         ToolExecutor toolExecutor,
-        ILogger<ConversationService> logger)
+        ILogger<ConversationService> logger,
+        FileReferenceParser? fileReferenceParser = null)
     {
         _sessionRepository = sessionRepository ?? throw new ArgumentNullException(nameof(sessionRepository));
         _messageRepository = messageRepository ?? throw new ArgumentNullException(nameof(messageRepository));
@@ -43,6 +47,7 @@ public sealed class ConversationService
         _orchestrator = orchestrator ?? throw new ArgumentNullException(nameof(orchestrator));
         _toolExecutor = toolExecutor ?? throw new ArgumentNullException(nameof(toolExecutor));
         _logger = logger ?? throw new ArgumentNullException(nameof(logger));
+        _fileReferenceParser = fileReferenceParser;
     }
 
     /// <summary>
@@ -64,8 +69,11 @@ public sealed class ConversationService
         var session = await _sessionRepository.GetByIdAsync(sessionId, ct)
             ?? throw new InvalidOperationException($"会话不存在: {sessionId}");
 
-        // 2. 保存用户消息
-        var userMsg = Message.CreateUser(sessionId, userMessage);
+        // 2. 处理文件引用（如果存在）
+        var processedMessage = await ProcessFileReferencesAsync(userMessage, sessionId.ToString(), ct);
+
+        // 3. 保存用户消息（使用处理后的消息）
+        var userMsg = Message.CreateUser(sessionId, processedMessage);
         await _messageRepository.CreateAsync(userMsg, ct);
 
         string responseContent;
@@ -138,8 +146,11 @@ public sealed class ConversationService
         var session = await _sessionRepository.GetByIdAsync(sessionId, ct)
             ?? throw new InvalidOperationException($"会话不存在: {sessionId}");
 
-        // 2. 保存用户消息
-        var userMsg = Message.CreateUser(sessionId, userMessage);
+        // 2. 处理文件引用（如果存在）
+        var processedMessage = await ProcessFileReferencesAsync(userMessage, sessionId.ToString(), ct);
+
+        // 3. 保存用户消息（使用处理后的消息）
+        var userMsg = Message.CreateUser(sessionId, processedMessage);
         await _messageRepository.CreateAsync(userMsg, ct);
 
         string fullResponse;
@@ -277,6 +288,53 @@ public sealed class ConversationService
 
             _logger.LogDebug("保存对话消息: Role={Role}, Content={Content}",
                 role, chatMsg.Content.Length > 50 ? chatMsg.Content[..50] + "..." : chatMsg.Content);
+        }
+    }
+
+    /// <summary>
+    /// 处理消息中的文件引用
+    /// </summary>
+    private async Task<string> ProcessFileReferencesAsync(
+        string message,
+        string sessionId,
+        CancellationToken ct)
+    {
+        // 如果没有注入 FileReferenceParser，直接返回原消息
+        if (_fileReferenceParser == null)
+        {
+            return message;
+        }
+
+        try
+        {
+            var processedMessage = await _fileReferenceParser.ProcessMessageAsync(message, sessionId, ct);
+
+            if (processedMessage.HasFileReferences)
+            {
+                _logger.LogInformation(
+                    "处理文件引用: {Total} 个引用, {Resolved} 个成功解析",
+                    processedMessage.ResolvedFiles.Count,
+                    processedMessage.ResolvedFiles.Count(r => r.IsResolved));
+
+                // 如果有未解析的引用，记录警告
+                var unresolved = processedMessage.ResolvedFiles.Where(r => !r.IsResolved).ToList();
+                if (unresolved.Count > 0)
+                {
+                    foreach (var ur in unresolved)
+                    {
+                        _logger.LogWarning("无法解析文件引用: {Reference}, 原因: {Error}",
+                            ur.Reference.OriginalText, ur.Error);
+                    }
+                }
+            }
+
+            return processedMessage.ProcessedContent;
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "处理文件引用时发生错误");
+            // 出错时返回原消息，不影响正常流程
+            return message;
         }
     }
 }

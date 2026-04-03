@@ -20,6 +20,7 @@
     <ProjectReference Include="..\GeneralAgent.Infrastructure.LLM\GeneralAgent.Infrastructure.LLM.csproj" />
     <ProjectReference Include="..\GeneralAgent.Infrastructure.Skills\GeneralAgent.Infrastructure.Skills.csproj" />
     <ProjectReference Include="..\GeneralAgent.Infrastructure.Compression\GeneralAgent.Infrastructure.Compression.csproj" />
+    <ProjectReference Include="..\GeneralAgent.Infrastructure.FileStorage\GeneralAgent.Infrastructure.FileStorage.csproj" />
   </ItemGroup>
 
 </Project>
