@@ -1,0 +1,15 @@
+{
+  "name": "General Agent",
+  "version": "3.0.0",
+  "description": "AI Agent 系统",
+  "features": [
+    "文件上传",
+    "记忆管理",
+    "技能系统"
+  ],
+  "config": {
+    "maxFileSize": 5242880,
+    "allowedExtensions": [".txt", ".json", ".md"],
+    "autoMemory": true
+  }
+}

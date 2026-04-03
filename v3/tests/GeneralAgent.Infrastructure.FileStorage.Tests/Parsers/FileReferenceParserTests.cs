@@ -1,11 +1,8 @@
 using FluentAssertions;
-using GeneralAgent.Infrastructure.FileStorage.Models;
 using GeneralAgent.Infrastructure.FileStorage.Parsers;
-using GeneralAgent.Infrastructure.FileStorage.Processors;
-using GeneralAgent.Infrastructure.FileStorage.Repositories;
-using GeneralAgent.Infrastructure.FileStorage.Services;
+using GeneralAgent.Infrastructure.FileStorage.Tests.Fixtures;
+using GeneralAgent.Infrastructure.FileStorage.Tests.Helpers;
 using Microsoft.Extensions.Logging;
-using Microsoft.Extensions.Options;
 using NSubstitute;
 
 namespace GeneralAgent.Infrastructure.FileStorage.Tests.Parsers;
@@ -13,30 +10,20 @@ namespace GeneralAgent.Infrastructure.FileStorage.Tests.Parsers;
 /// <summary>
 /// FileReferenceParser 单元测试
 /// </summary>
-public class FileReferenceParserTests
+[Collection("FileStorage Collection")]
+public class FileReferenceParserTests : IDisposable
 {
     private readonly FileReferenceParser _parser;
-    private readonly FileStorageService _fileStorage;
-    private readonly FileRepository _mockRepository;
-    private readonly FileProcessorService _mockProcessorService;
+    private readonly FileStorageFixture _fixture;
     private readonly ILogger<FileReferenceParser> _logger;
+    private readonly string _sessionId;
 
-    public FileReferenceParserTests()
+    public FileReferenceParserTests(FileStorageFixture fixture)
     {
-        _mockRepository = Substitute.For<FileRepository>();
-        _mockProcessorService = Substitute.For<FileProcessorService>();
+        _fixture = fixture;
         _logger = Substitute.For<ILogger<FileReferenceParser>>();
-
-        var options = Options.Create(new FileStorageOptions());
-        var storageLogger = Substitute.For<ILogger<FileStorageService>>();
-
-        _fileStorage = new FileStorageService(
-            options,
-            _mockRepository,
-            _mockProcessorService,
-            storageLogger);
-
-        _parser = new FileReferenceParser(_fileStorage, _logger);
+        _parser = new FileReferenceParser(_fixture.StorageService, _logger);
+        _sessionId = Guid.NewGuid().ToString();
     }
 
     [Fact]
@@ -120,10 +107,9 @@ public class FileReferenceParserTests
     {
         // Arrange
         var message = "这是一条普通消息";
-        var sessionId = "test-session";
 
         // Act
-        var result = await _parser.ProcessMessageAsync(message, sessionId);
+        var result = await _parser.ProcessMessageAsync(message, _sessionId);
 
         // Assert
         result.OriginalMessage.Should().Be(message);
@@ -136,37 +122,21 @@ public class FileReferenceParserTests
     public async Task ProcessMessageAsync_应该替换已解析的文件引用()
     {
         // Arrange
-        var fileId = Guid.NewGuid();
-        var message = $"请查看 @file:{fileId}";
-        var sessionId = "test-session";
+        var content = "这是测试文件的内容";
+        var filePath = TestFileHelper.CreateTempTextFile(content);
+        var uploadedFile = await _fixture.StorageService.UploadFileAsync(filePath, _sessionId);
 
-        var uploadedFile = new UploadedFile
-        {
-            Id = fileId,
-            SessionId = sessionId,
-            FileName = "test.txt",
-            FileType = ".txt",
-            FileSize = 100,
-            UploadedAt = DateTime.UtcNow
-        };
-
-        var processedContent = ProcessedFileContent.Create("文件内容");
-
-        _mockRepository.GetByIdAsync(fileId, Arg.Any<CancellationToken>())
-            .Returns(uploadedFile);
-
-        _mockProcessorService.ProcessFileAsync(Arg.Any<string>(), Arg.Any<int>(), Arg.Any<CancellationToken>())
-            .Returns(processedContent);
+        var message = $"请查看 @file:{uploadedFile.Id}";
 
         // Act
-        var result = await _parser.ProcessMessageAsync(message, sessionId);
+        var result = await _parser.ProcessMessageAsync(message, _sessionId);
 
         // Assert
         result.HasFileReferences.Should().BeTrue();
         result.ResolvedFiles.Should().HaveCount(1);
         result.ResolvedFiles[0].IsResolved.Should().BeTrue();
-        result.ProcessedContent.Should().Contain("<file name=\"test.txt\"");
-        result.ProcessedContent.Should().Contain("文件内容");
+        result.ProcessedContent.Should().Contain($"<file name=\"{uploadedFile.FileName}\"");
+        result.ProcessedContent.Should().Contain(content);
         result.ProcessedContent.Should().Contain("</file>");
     }
 
@@ -174,15 +144,11 @@ public class FileReferenceParserTests
     public async Task ProcessMessageAsync_文件不存在时应该保持原引用()
     {
         // Arrange
-        var fileId = Guid.NewGuid();
-        var message = $"请查看 @file:{fileId}";
-        var sessionId = "test-session";
-
-        _mockRepository.GetByIdAsync(fileId, Arg.Any<CancellationToken>())
-            .Returns((UploadedFile?)null);
+        var nonExistentId = Guid.NewGuid();
+        var message = $"请查看 @file:{nonExistentId}";
 
         // Act
-        var result = await _parser.ProcessMessageAsync(message, sessionId);
+        var result = await _parser.ProcessMessageAsync(message, _sessionId);
 
         // Assert
         result.HasFileReferences.Should().BeTrue();
@@ -196,86 +162,47 @@ public class FileReferenceParserTests
     public async Task ProcessMessageAsync_应该处理截断的文件内容()
     {
         // Arrange
-        var fileId = Guid.NewGuid();
-        var message = $"@file:{fileId}";
-        var sessionId = "test-session";
+        var largeContent = new string('A', 15000); // 超过默认10000字符限制
+        var filePath = TestFileHelper.CreateTempTextFile(largeContent);
+        var uploadedFile = await _fixture.StorageService.UploadFileAsync(filePath, _sessionId);
 
-        var uploadedFile = new UploadedFile
-        {
-            Id = fileId,
-            SessionId = sessionId,
-            FileName = "large.txt",
-            FileType = ".txt",
-            FileSize = 20000,
-            UploadedAt = DateTime.UtcNow
-        };
-
-        var processedContent = ProcessedFileContent.CreateTruncated(
-            "截断后的内容",
-            20000);
-
-        _mockRepository.GetByIdAsync(fileId, Arg.Any<CancellationToken>())
-            .Returns(uploadedFile);
-
-        _mockProcessorService.ProcessFileAsync(Arg.Any<string>(), Arg.Any<int>(), Arg.Any<CancellationToken>())
-            .Returns(processedContent);
+        var message = $"@file:{uploadedFile.Id}";
 
         // Act
-        var result = await _parser.ProcessMessageAsync(message, sessionId);
+        var result = await _parser.ProcessMessageAsync(message, _sessionId);
 
         // Assert
-        result.ProcessedContent.Should().Contain("截断后的内容");
-        result.ProcessedContent.Should().Contain("[内容已截断: 原始 20000 字符");
+        result.ProcessedContent.Should().Contain("[内容已截断: 原始 15000 字符");
     }
 
     [Fact]
     public async Task ProcessMessageAsync_应该处理多个文件引用的顺序替换()
     {
         // Arrange
-        var file1Id = Guid.NewGuid();
-        var file2Id = Guid.NewGuid();
-        var message = $"文件1: @file:{file1Id} 和文件2: @file:{file2Id}";
-        var sessionId = "test-session";
+        var file1Path = TestFileHelper.CreateTempTextFile("内容1");
+        var file2Path = TestFileHelper.CreateTempTextFile("内容2");
 
-        var file1 = new UploadedFile
-        {
-            Id = file1Id,
-            SessionId = sessionId,
-            FileName = "file1.txt",
-            FileType = ".txt",
-            FileSize = 10,
-            UploadedAt = DateTime.UtcNow
-        };
+        var file1 = await _fixture.StorageService.UploadFileAsync(file1Path, _sessionId);
+        var file2 = await _fixture.StorageService.UploadFileAsync(file2Path, _sessionId);
 
-        var file2 = new UploadedFile
-        {
-            Id = file2Id,
-            SessionId = sessionId,
-            FileName = "file2.txt",
-            FileType = ".txt",
-            FileSize = 10,
-            UploadedAt = DateTime.UtcNow
-        };
-
-        _mockRepository.GetByIdAsync(file1Id, Arg.Any<CancellationToken>())
-            .Returns(file1);
-        _mockRepository.GetByIdAsync(file2Id, Arg.Any<CancellationToken>())
-            .Returns(file2);
-
-        _mockProcessorService.ProcessFileAsync(Arg.Any<string>(), Arg.Any<int>(), Arg.Any<CancellationToken>())
-            .Returns(
-                ProcessedFileContent.Create("内容1"),
-                ProcessedFileContent.Create("内容2"));
+        var message = $"文件1: @file:{file1.Id} 和文件2: @file:{file2.Id}";
 
         // Act
-        var result = await _parser.ProcessMessageAsync(message, sessionId);
+        var result = await _parser.ProcessMessageAsync(message, _sessionId);
 
         // Assert
         result.ResolvedFiles.Should().HaveCount(2);
         result.AllReferencesResolved.Should().BeTrue();
-        result.ProcessedContent.Should().Contain("file1.txt");
-        result.ProcessedContent.Should().Contain("file2.txt");
+        result.ProcessedContent.Should().Contain(file1.FileName);
+        result.ProcessedContent.Should().Contain(file2.FileName);
         result.ProcessedContent.Should().Contain("内容1");
         result.ProcessedContent.Should().Contain("内容2");
+    }
+
+    public void Dispose()
+    {
+        // 临时文件会在测试结束后自动清理
+        // TestFileHelper.CleanupTempFiles();
+        GC.SuppressFinalize(this);
     }
 }
