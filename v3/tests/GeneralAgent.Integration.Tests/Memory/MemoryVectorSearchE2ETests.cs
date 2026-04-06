@@ -360,6 +360,94 @@ public sealed class MemoryVectorSearchE2ETests : IAsyncLifetime
     }
 
     /// <summary>
+    /// 测试 5: 向量搜索结果按相似度排序
+    /// </summary>
+    [Fact]
+    public async Task VectorSearch_ShouldReturnResultsSortedBySimilarity()
+    {
+        // Arrange
+        SkipIfServicesUnavailable();
+
+        // 创建 3 个记忆：相关性依次递减
+        var memory1 = Core.Models.Memory.Create(
+            MemoryType.Knowledge,
+            "highly_relevant",
+            "深度学习和神经网络",
+            "# 深度学习\n\n深度学习是机器学习的一个分支，使用多层神经网络进行训练。" +
+            "深度学习模型可以自动学习特征，广泛应用于图像识别、自然语言处理等领域。" +
+            "常见的深度学习框架包括 TensorFlow、PyTorch 等。",
+            new List<string> { "ai", "deep-learning", "neural-network" }
+        );
+
+        var memory2 = Core.Models.Memory.Create(
+            MemoryType.Knowledge,
+            "moderately_relevant",
+            "机器学习基础",
+            "# 机器学习\n\n机器学习是一种数据分析方法，让计算机从数据中学习规律。" +
+            "监督学习、无监督学习和强化学习是机器学习的三大类别。",
+            new List<string> { "ai", "machine-learning" }
+        );
+
+        var memory3 = Core.Models.Memory.Create(
+            MemoryType.Knowledge,
+            "less_relevant",
+            "软件工程方法论",
+            "# 软件工程\n\n软件工程是应用工程方法设计、开发和维护软件的学科。" +
+            "包括需求分析、系统设计、编码实现、测试和维护等阶段。",
+            new List<string> { "software", "engineering" }
+        );
+
+        var saved1 = await _memoryRepository.SaveAsync(memory1);
+        var saved2 = await _memoryRepository.SaveAsync(memory2);
+        var saved3 = await _memoryRepository.SaveAsync(memory3);
+        _testMemoryIds.Add(saved1.Id);
+        _testMemoryIds.Add(saved2.Id);
+        _testMemoryIds.Add(saved3.Id);
+
+        // 等待向量索引完成
+        await Task.Delay(500);
+
+        // Act: 搜索 "深度学习神经网络"（最匹配 memory1）
+        var results = await _retrievalService.SearchBySemanticAsync(
+            "深度学习神经网络",
+            topK: 3,
+            typeFilter: MemoryType.Knowledge
+        );
+
+        // Assert
+        results.Should().NotBeEmpty();
+        results.Should().HaveCountGreaterThanOrEqualTo(2, "应该至少返回 2 个相关记忆");
+
+        // 验证最相关的记忆在结果中（使用包含检查，因为向量相似度可能有细微差异）
+        results.Select(r => r.Id).Should().Contain(saved1.Id, "最相关的记忆应该在结果中");
+
+        // 查找各个记忆在结果中的位置
+        var index1 = results.FindIndex(r => r.Id == saved1.Id);
+        var index2 = results.FindIndex(r => r.Id == saved2.Id);
+        var index3 = results.FindIndex(r => r.Id == saved3.Id);
+
+        // 验证排序规则：memory1 应该在前面（如果存在的话）
+        if (index1 >= 0 && index2 >= 0)
+        {
+            index1.Should().BeLessThan(index2,
+                "最相关的记忆（深度学习）应该排在次相关的记忆（机器学习）前面");
+        }
+
+        if (index2 >= 0 && index3 >= 0)
+        {
+            index2.Should().BeLessThan(index3,
+                "次相关的记忆（机器学习）应该排在不相关的记忆（软件工程）前面");
+        }
+
+        // 额外验证：第一个结果应该是 memory1
+        if (results.Count > 0)
+        {
+            results[0].Id.Should().Be(saved1.Id,
+                "第一个结果应该是最相关的记忆（深度学习神经网络）");
+        }
+    }
+
+    /// <summary>
     /// 跳过测试如果服务不可用
     /// </summary>
     private void SkipIfServicesUnavailable()

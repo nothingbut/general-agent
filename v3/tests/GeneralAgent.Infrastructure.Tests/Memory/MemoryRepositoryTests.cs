@@ -6,6 +6,7 @@ using GeneralAgent.Infrastructure.Memory.Repositories;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Logging.Abstractions;
 using Microsoft.Extensions.Options;
+using Xunit.Abstractions;
 
 namespace GeneralAgent.Infrastructure.Tests.Memory;
 
@@ -17,19 +18,27 @@ public class MemoryRepositoryTests : IDisposable
 {
     private readonly string _tempDirectory;
     private readonly IMemoryRepository _repository;
+    private readonly ITestOutputHelper _testOutputHelper;
+    private readonly ILoggerFactory _loggerFactory;
+    private readonly MemoryOptions _options;
 
-    public MemoryRepositoryTests()
+    public MemoryRepositoryTests(ITestOutputHelper testOutputHelper)
     {
+        _testOutputHelper = testOutputHelper;
+        _loggerFactory = NullLoggerFactory.Instance;
+
         // 创建临时测试目录
         _tempDirectory = Path.Combine(Path.GetTempPath(), $"memory_tests_{Guid.NewGuid()}");
         Directory.CreateDirectory(_tempDirectory);
 
-        var options = Options.Create(new MemoryOptions
+        _options = new MemoryOptions
         {
             RootDirectory = _tempDirectory
-        });
+        };
 
-        _repository = new MemoryRepository(options, NullLogger<MemoryRepository>.Instance);
+        _repository = new MemoryRepository(
+            Options.Create(_options),
+            _loggerFactory.CreateLogger<MemoryRepository>());
     }
 
     public void Dispose()
@@ -838,6 +847,100 @@ public class MemoryRepositoryTests : IDisposable
         retrieved.Description.Should().Be(original.Description);
         retrieved.Content.Should().Be(original.Content);
         retrieved.Tags.Should().BeEquivalentTo(original.Tags);
+    }
+
+    #endregion
+
+    #region Performance Tests (N+1 Query Optimization)
+
+    [Fact]
+    public async Task GetByIdsAsync_WithIndexOptimization_ShouldBeFasterThanBeforeOptimization()
+    {
+        // Arrange: 创建 100 个记忆
+        var memories = new List<Core.Models.Memory>();
+        for (int i = 0; i < 100; i++)
+        {
+            var memory = Core.Models.Memory.Create(
+                MemoryType.User,
+                $"perf_test_{i}",
+                $"Description {i}",
+                $"Content {i}");
+            await _repository.SaveAsync(memory);
+            memories.Add(memory);
+        }
+
+        // 选择 10 个 ID 进行批量查询
+        var ids = memories.Take(10).Select(m => m.Id).ToArray();
+
+        // Act: 测量批量查询性能
+        var stopwatch = System.Diagnostics.Stopwatch.StartNew();
+        var result = await _repository.GetByIdsAsync(ids);
+        stopwatch.Stop();
+
+        // Assert
+        result.Should().HaveCount(10);
+
+        // 验证性能：批量查询 10 个记忆应该在 100ms 内完成（优化前可能需要 500ms+）
+        stopwatch.ElapsedMilliseconds.Should().BeLessThan(100,
+            $"GetByIdsAsync should be fast with index optimization. Actual: {stopwatch.ElapsedMilliseconds}ms");
+
+        _testOutputHelper.WriteLine($"✅ GetByIdsAsync (10 items) completed in {stopwatch.ElapsedMilliseconds}ms");
+    }
+
+    [Fact]
+    public async Task GetByIdAsync_WithIndexOptimization_ShouldNotLoadAllMemories()
+    {
+        // Arrange: 创建 50 个记忆
+        var targetMemory = Core.Models.Memory.Create(MemoryType.User, "target", "d", "c");
+        await _repository.SaveAsync(targetMemory);
+
+        for (int i = 0; i < 49; i++)
+        {
+            await _repository.SaveAsync(
+                Core.Models.Memory.Create(MemoryType.User, $"other_{i}", "d", "c"));
+        }
+
+        // Act: 测量单个查询性能
+        var stopwatch = System.Diagnostics.Stopwatch.StartNew();
+        var result = await _repository.GetByIdAsync(targetMemory.Id);
+        stopwatch.Stop();
+
+        // Assert
+        result.Should().NotBeNull();
+        result!.Id.Should().Be(targetMemory.Id);
+
+        // 验证性能：单个查询应该在 50ms 内完成（优化前需要加载所有 50 个文件）
+        stopwatch.ElapsedMilliseconds.Should().BeLessThan(50,
+            $"GetByIdAsync should be fast with index optimization. Actual: {stopwatch.ElapsedMilliseconds}ms");
+
+        _testOutputHelper.WriteLine($"✅ GetByIdAsync completed in {stopwatch.ElapsedMilliseconds}ms");
+    }
+
+    [Fact]
+    public async Task IndexBuilding_ShouldBeEfficient()
+    {
+        // Arrange: 创建 100 个记忆
+        for (int i = 0; i < 100; i++)
+        {
+            await _repository.SaveAsync(
+                Core.Models.Memory.Create(MemoryType.User, $"index_test_{i}", "d", "c"));
+        }
+
+        // 创建新的 repository 实例（强制重建索引）
+        var newRepository = new MemoryRepository(
+            Microsoft.Extensions.Options.Options.Create(_options),
+            _loggerFactory.CreateLogger<MemoryRepository>());
+
+        // Act: 测量索引构建性能（第一次查询时懒加载）
+        var stopwatch = System.Diagnostics.Stopwatch.StartNew();
+        var result = await newRepository.GetByIdAsync(Guid.NewGuid()); // 触发索引构建
+        stopwatch.Stop();
+
+        // Assert: 索引构建应该在 200ms 内完成
+        stopwatch.ElapsedMilliseconds.Should().BeLessThan(200,
+            $"Index building for 100 memories should be fast. Actual: {stopwatch.ElapsedMilliseconds}ms");
+
+        _testOutputHelper.WriteLine($"✅ Index building (100 memories) completed in {stopwatch.ElapsedMilliseconds}ms");
     }
 
     #endregion
