@@ -2,6 +2,7 @@
   <Folder Name="/src/">
     <Project Path="src/GeneralAgent.Core/GeneralAgent.Core.csproj" />
     <Project Path="src/GeneralAgent.Infrastructure.LLM/GeneralAgent.Infrastructure.LLM.csproj" />
+    <Project Path="src/GeneralAgent.Infrastructure.SkillExtraction/GeneralAgent.Infrastructure.SkillExtraction.csproj" />
     <Project Path="src/GeneralAgent.Infrastructure.Skills/GeneralAgent.Infrastructure.Skills.csproj" />
     <Project Path="src/GeneralAgent.Infrastructure/GeneralAgent.Infrastructure.csproj" />
     <Project Path="src/GeneralAgent.Application/GeneralAgent.Application.csproj" />
