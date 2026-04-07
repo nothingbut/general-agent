@@ -59,11 +59,11 @@ public sealed record MemoryIndex
 
     /// <summary>
     /// 转换为 Markdown 格式的索引行
-    /// 格式: - [Title](filepath.md) — description [tags]
+    /// 格式: - [Title](filepath.md) — description [tags] <!-- id: guid -->
     /// </summary>
     public string ToMarkdownLine()
     {
         var tagsStr = Tags.Count > 0 ? $" `{string.Join("` `", Tags)}`" : "";
-        return $"- [{Name}]({FilePath}) — {Description}{tagsStr}";
+        return $"- [{Name}]({FilePath}) — {Description}{tagsStr} <!-- id:{Id} -->";
     }
 }
