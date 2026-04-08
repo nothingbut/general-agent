@@ -10,20 +10,20 @@ namespace GeneralAgent.Infrastructure.FileStorage.Tests.Services;
 /// <summary>
 /// FileLibraryService 单元测试
 /// </summary>
-[Collection("FileStorage Collection")]
-public class FileLibraryServiceTests : IDisposable
+public class FileLibraryServiceTests : IAsyncLifetime
 {
-    private readonly FileStorageFixture _fixture;
-    private readonly FileLibraryService _libraryService;
-    private readonly FilePermissionService _permissionService;
-    private readonly IFilePermissionRepository _permissionRepository;
+    private FileStorageFixture _fixture = null!;
+    private FileLibraryService _libraryService = null!;
+    private FilePermissionService _permissionService = null!;
+    private IFilePermissionRepository _permissionRepository = null!;
     private readonly string _user1Id = "user-1";
     private readonly string _user2Id = "user-2";
     private readonly string _user3Id = "user-3";
 
-    public FileLibraryServiceTests(FileStorageFixture fixture)
+    public async Task InitializeAsync()
     {
-        _fixture = fixture;
+        // 为每个测试创建独立的 Fixture
+        _fixture = new FileStorageFixture();
 
         // 创建 FilePermissionRepository
         var permRepoLogger = LoggerFactory
@@ -50,6 +50,14 @@ public class FileLibraryServiceTests : IDisposable
             _permissionRepository,
             _permissionService,
             libraryServiceLogger);
+
+        await Task.CompletedTask;
+    }
+
+    public async Task DisposeAsync()
+    {
+        _fixture?.Dispose();
+        await Task.CompletedTask;
     }
 
     #region ListAccessibleFilesAsync Tests
@@ -360,9 +368,4 @@ public class FileLibraryServiceTests : IDisposable
     }
 
     #endregion
-
-    public void Dispose()
-    {
-        GC.SuppressFinalize(this);
-    }
 }
