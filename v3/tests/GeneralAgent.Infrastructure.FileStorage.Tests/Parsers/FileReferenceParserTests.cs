@@ -17,6 +17,7 @@ public class FileReferenceParserTests : IDisposable
     private readonly FileStorageFixture _fixture;
     private readonly ILogger<FileReferenceParser> _logger;
     private readonly string _sessionId;
+    private readonly string _ownerId = "test-user-123";
 
     public FileReferenceParserTests(FileStorageFixture fixture)
     {
@@ -124,7 +125,7 @@ public class FileReferenceParserTests : IDisposable
         // Arrange
         var content = "这是测试文件的内容";
         var filePath = TestFileHelper.CreateTempTextFile(content);
-        var uploadedFile = await _fixture.StorageService.UploadFileAsync(filePath, _sessionId);
+        var uploadedFile = await _fixture.StorageService.UploadFileAsync(filePath, _sessionId, _ownerId);
 
         var message = $"请查看 @file:{uploadedFile.Id}";
 
@@ -164,7 +165,7 @@ public class FileReferenceParserTests : IDisposable
         // Arrange
         var largeContent = new string('A', 15000); // 超过默认10000字符限制
         var filePath = TestFileHelper.CreateTempTextFile(largeContent);
-        var uploadedFile = await _fixture.StorageService.UploadFileAsync(filePath, _sessionId);
+        var uploadedFile = await _fixture.StorageService.UploadFileAsync(filePath, _sessionId, _ownerId);
 
         var message = $"@file:{uploadedFile.Id}";
 
@@ -182,8 +183,8 @@ public class FileReferenceParserTests : IDisposable
         var file1Path = TestFileHelper.CreateTempTextFile("内容1");
         var file2Path = TestFileHelper.CreateTempTextFile("内容2");
 
-        var file1 = await _fixture.StorageService.UploadFileAsync(file1Path, _sessionId);
-        var file2 = await _fixture.StorageService.UploadFileAsync(file2Path, _sessionId);
+        var file1 = await _fixture.StorageService.UploadFileAsync(file1Path, _sessionId, _ownerId);
+        var file2 = await _fixture.StorageService.UploadFileAsync(file2Path, _sessionId, _ownerId);
 
         var message = $"文件1: @file:{file1.Id} 和文件2: @file:{file2.Id}";
 

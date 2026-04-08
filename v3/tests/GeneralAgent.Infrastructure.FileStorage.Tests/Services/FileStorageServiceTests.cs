@@ -12,6 +12,7 @@ public class FileStorageServiceTests : IDisposable
 {
     private readonly FileStorageFixture _fixture;
     private readonly string _sessionId;
+    private readonly string _ownerId = "test-user-123";
 
     public FileStorageServiceTests(FileStorageFixture fixture)
     {
@@ -29,7 +30,8 @@ public class FileStorageServiceTests : IDisposable
         // Act
         var uploadedFile = await _fixture.StorageService.UploadFileAsync(
             filePath,
-            _sessionId);
+            _sessionId,
+            _ownerId);
 
         // Assert
         uploadedFile.Should().NotBeNull();
@@ -49,7 +51,7 @@ public class FileStorageServiceTests : IDisposable
 
         // Act & Assert
         await Assert.ThrowsAsync<ArgumentException>(
-            () => _fixture.StorageService.UploadFileAsync(filePath, _sessionId));
+            () => _fixture.StorageService.UploadFileAsync(filePath, _sessionId, _ownerId));
     }
 
     [Fact]
@@ -60,7 +62,7 @@ public class FileStorageServiceTests : IDisposable
 
         // Act & Assert
         await Assert.ThrowsAsync<ArgumentException>(
-            () => _fixture.StorageService.UploadFileAsync(filePath, _sessionId));
+            () => _fixture.StorageService.UploadFileAsync(filePath, _sessionId, _ownerId));
     }
 
     [Fact]
@@ -69,7 +71,7 @@ public class FileStorageServiceTests : IDisposable
         // Arrange
         var originalContent = "测试文件内容\n第二行";
         var filePath = TestFileHelper.CreateTempTextFile(originalContent);
-        var uploadedFile = await _fixture.StorageService.UploadFileAsync(filePath, _sessionId);
+        var uploadedFile = await _fixture.StorageService.UploadFileAsync(filePath, _sessionId, _ownerId);
 
         // Act
         var processedContent = await _fixture.StorageService.ReadFileContentAsync(uploadedFile);
@@ -87,8 +89,8 @@ public class FileStorageServiceTests : IDisposable
         var file1Path = TestFileHelper.CreateTempTextFile("内容1");
         var file2Path = TestFileHelper.CreateTempTextFile("内容2");
 
-        await _fixture.StorageService.UploadFileAsync(file1Path, _sessionId);
-        await _fixture.StorageService.UploadFileAsync(file2Path, _sessionId);
+        await _fixture.StorageService.UploadFileAsync(file1Path, _sessionId, _ownerId);
+        await _fixture.StorageService.UploadFileAsync(file2Path, _sessionId, _ownerId);
 
         // Act
         var files = await _fixture.StorageService.ListFilesAsync(_sessionId);
@@ -103,7 +105,7 @@ public class FileStorageServiceTests : IDisposable
     {
         // Arrange
         var filePath = TestFileHelper.CreateTempTextFile("待删除的内容");
-        var uploadedFile = await _fixture.StorageService.UploadFileAsync(filePath, _sessionId);
+        var uploadedFile = await _fixture.StorageService.UploadFileAsync(filePath, _sessionId, _ownerId);
 
         // Act
         var deleted = await _fixture.StorageService.DeleteFileAsync(uploadedFile.Id);
@@ -135,7 +137,7 @@ public class FileStorageServiceTests : IDisposable
         // Arrange
         var fileName = "test-unique.txt";
         var filePath = TestFileHelper.CreateTempFile(fileName, "内容");
-        await _fixture.StorageService.UploadFileAsync(filePath, _sessionId);
+        await _fixture.StorageService.UploadFileAsync(filePath, _sessionId, _ownerId);
 
         // Act
         var files = await _fixture.StorageService.GetFilesByNameAsync(fileName, _sessionId);
