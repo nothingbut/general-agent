@@ -29,6 +29,8 @@ public static class FileShowCommand
             {
                 using var scope = serviceProvider.CreateScope();
                 var fileStorage = scope.ServiceProvider.GetRequiredService<FileStorageService>();
+                var permissionService = scope.ServiceProvider.GetRequiredService<IFilePermissionService>();
+                var versionService = scope.ServiceProvider.GetRequiredService<IFileVersionService>();
 
                 // 尝试解析为 GUID
                 Guid fileId;
@@ -54,6 +56,20 @@ public static class FileShowCommand
                     return;
                 }
 
+                // 获取权限信息
+                var permissions = await permissionService.ListPermissionsAsync(fileId);
+
+                // 获取版本信息
+                List<Infrastructure.FileStorage.Models.UploadedFile> versions;
+                try
+                {
+                    versions = await versionService.GetVersionHistoryAsync(fileId);
+                }
+                catch
+                {
+                    versions = new List<Infrastructure.FileStorage.Models.UploadedFile>();
+                }
+
                 // 显示文件详情
                 var table = new Table()
                     .Border(TableBorder.Rounded)
@@ -63,9 +79,32 @@ public static class FileShowCommand
                 table.AddRow("[cyan]文件 ID[/]", file.Id.ToString());
                 table.AddRow("[cyan]会话 ID[/]", file.SessionId);
                 table.AddRow("[cyan]文件名[/]", file.FileName);
+                table.AddRow("[cyan]所有者[/]", file.OwnerId);
+
+                var levelColor = file.AccessLevel switch
+                {
+                    Infrastructure.FileStorage.Models.FileAccessLevel.Private => "red",
+                    Infrastructure.FileStorage.Models.FileAccessLevel.Shared => "yellow",
+                    Infrastructure.FileStorage.Models.FileAccessLevel.Public => "green",
+                    _ => "white"
+                };
+                table.AddRow("[cyan]访问级别[/]", $"[{levelColor}]{file.AccessLevel}[/]");
+
                 table.AddRow("[cyan]文件类型[/]", file.FileType);
                 table.AddRow("[cyan]文件大小[/]", FormatFileSize(file.FileSize));
                 table.AddRow("[cyan]MIME 类型[/]", file.MimeType ?? "[dim]未知[/]");
+
+                if (versions.Count > 0)
+                {
+                    table.AddRow("[cyan]当前版本[/]", $"v{file.Version} {(file.IsLatest ? "[green](最新)[/]" : "[dim](历史)[/]")}");
+                    table.AddRow("[cyan]版本总数[/]", versions.Count.ToString());
+                }
+
+                if (permissions.Count > 0)
+                {
+                    table.AddRow("[cyan]授权用户数[/]", permissions.Count.ToString());
+                }
+
                 table.AddRow("[cyan]上传时间[/]", file.UploadedAt.ToString("yyyy-MM-dd HH:mm:ss"));
                 table.AddRow("[cyan]存储路径[/]", file.FilePath);
 
@@ -83,14 +122,35 @@ public static class FileShowCommand
 
                 // 显示引用提示
                 AnsiConsole.WriteLine();
-                var panel = new Panel(new Markup($"""
-                    [dim]在对话中引用此文件：[/]
-                    • [green]@file:{file.FileName}[/]
-                    • [green]@file:{file.Id}[/]
+                var tips = new List<string>
+                {
+                    "[dim]在对话中引用此文件：[/]",
+                    "• [green]@file:" + file.FileName + "[/]",
+                    "• [green]@file:" + file.Id + "[/]",
+                    "",
+                    "[dim]查看文件内容：[/]",
+                    "• [green]agent file content " + file.Id + "[/]"
+                };
 
-                    [dim]查看文件内容：[/]
-                    • [green]agent file content {file.Id}[/]
-                    """))
+                if (versions.Count > 1)
+                {
+                    tips.Add("");
+                    tips.Add("[dim]版本管理：[/]");
+                    tips.Add("• [green]agent file versions " + file.Id + "[/] - 查看版本历史");
+                    tips.Add("• [green]agent file restore " + file.Id + " --version <number>[/] - 恢复到特定版本");
+                }
+
+                if (file.AccessLevel == Infrastructure.FileStorage.Models.FileAccessLevel.Private ||
+                    file.AccessLevel == Infrastructure.FileStorage.Models.FileAccessLevel.Shared)
+                {
+                    tips.Add("");
+                    tips.Add("[dim]权限管理：[/]");
+                    tips.Add("• [green]agent file share " + file.Id + " --user <user-id>[/] - 共享文件");
+                    tips.Add("• [green]agent file permissions " + file.Id + "[/] - 查看权限列表");
+                    tips.Add("• [green]agent file access " + file.Id + " --level <private|shared|public>[/] - 修改访问级别");
+                }
+
+                var panel = new Panel(new Markup(string.Join("\n", tips)))
                 {
                     Header = new PanelHeader("使用提示"),
                     Border = BoxBorder.Rounded

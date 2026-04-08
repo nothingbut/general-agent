@@ -1,6 +1,7 @@
 using System.CommandLine;
 using GeneralAgent.Core.Abstractions;
 using GeneralAgent.Hosts.Console.Utils;
+using GeneralAgent.Infrastructure.FileStorage.Models;
 using GeneralAgent.Infrastructure.FileStorage.Services;
 using Microsoft.Extensions.DependencyInjection;
 using Spectre.Console;
@@ -31,7 +32,14 @@ public static class FileUploadCommand
             description: "自动提取文件内容到记忆系统");
         command.AddOption(toMemoryOption);
 
-        command.SetHandler(async (path, toMemory) =>
+        // 选项：访问级别
+        var accessLevelOption = new Option<string>(
+            aliases: new[] { "--access-level", "-a" },
+            getDefaultValue: () => "private",
+            description: "访问级别 (private, shared, public)");
+        command.AddOption(accessLevelOption);
+
+        command.SetHandler(async (path, toMemory, accessLevelStr) =>
         {
             try
             {
@@ -47,6 +55,18 @@ public static class FileUploadCommand
                     Environment.Exit(1);
                     return;
                 }
+
+                // 解析访问级别
+                if (!Enum.TryParse<FileAccessLevel>(accessLevelStr, true, out var accessLevel))
+                {
+                    AnsiConsole.MarkupLine($"[red]✗ 无效的访问级别: {accessLevelStr}[/]");
+                    AnsiConsole.MarkupLine("[dim]有效值: private, shared, public[/]");
+                    Environment.Exit(1);
+                    return;
+                }
+
+                // 获取当前用户 ID
+                var ownerId = GetCurrentUserId();
 
                 // 展开 ~ 路径
                 if (path.StartsWith("~/"))
@@ -75,16 +95,28 @@ public static class FileUploadCommand
                     {
                         var file = await fileStorage.UploadFileAsync(
                             path,
-                            currentSessionId.Value.ToString());
+                            currentSessionId.Value.ToString(),
+                            ownerId,
+                            accessLevel);
 
                         ctx.Status("上传完成");
 
                         // 显示上传结果
+                        var levelColor = file.AccessLevel switch
+                        {
+                            FileAccessLevel.Private => "red",
+                            FileAccessLevel.Shared => "yellow",
+                            FileAccessLevel.Public => "green",
+                            _ => "white"
+                        };
+
                         var panel = new Panel(new Markup($"""
                             [green]✓ 文件已上传[/]
 
                             [cyan]文件 ID:[/] {file.Id}
                             [cyan]文件名:[/] {file.FileName}
+                            [cyan]所有者:[/] {file.OwnerId}
+                            [cyan]访问级别:[/] [{levelColor}]{file.AccessLevel}[/]
                             [cyan]文件类型:[/] {file.FileType}
                             [cyan]文件大小:[/] {FormatFileSize(file.FileSize)}
                             [cyan]MIME 类型:[/] {file.MimeType ?? "[dim]未知[/]"}
@@ -182,9 +214,25 @@ public static class FileUploadCommand
                 AnsiConsole.MarkupLine($"[red]✗ 上传文件时发生错误: {ex.Message}[/]");
                 Environment.Exit(1);
             }
-        }, pathArgument, toMemoryOption);
+        }, pathArgument, toMemoryOption, accessLevelOption);
 
         return command;
+    }
+
+    /// <summary>
+    /// 获取当前用户 ID
+    /// </summary>
+    private static string GetCurrentUserId()
+    {
+        // 优先使用环境变量
+        var userId = Environment.GetEnvironmentVariable("AGENT_USER_ID");
+        if (!string.IsNullOrEmpty(userId))
+        {
+            return userId;
+        }
+
+        // 使用系统用户名作为默认值
+        return Environment.UserName ?? "default-user";
     }
 
     /// <summary>

@@ -82,15 +82,27 @@ public static class FileListCommand
                         .Border(TableBorder.Rounded)
                         .AddColumn("文件 ID")
                         .AddColumn("文件名")
+                        .AddColumn("所有者")
+                        .AddColumn("访问级别")
                         .AddColumn("类型")
                         .AddColumn("大小")
                         .AddColumn("上传时间");
 
                     foreach (var file in files.OrderByDescending(f => f.UploadedAt))
                     {
+                        var levelColor = file.AccessLevel switch
+                        {
+                            Infrastructure.FileStorage.Models.FileAccessLevel.Private => "red",
+                            Infrastructure.FileStorage.Models.FileAccessLevel.Shared => "yellow",
+                            Infrastructure.FileStorage.Models.FileAccessLevel.Public => "green",
+                            _ => "white"
+                        };
+
                         table.AddRow(
                             $"[cyan]{file.Id.ToString()[..8]}...[/]",
                             file.FileName,
+                            file.OwnerId,
+                            $"[{levelColor}]{file.AccessLevel}[/]",
                             file.FileType,
                             FormatFileSize(file.FileSize),
                             file.UploadedAt.ToString("yyyy-MM-dd HH:mm")

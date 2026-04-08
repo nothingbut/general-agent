@@ -29,12 +29,19 @@ public static class FileContentCommand
             description: "限制显示的行数");
         command.AddOption(linesOption);
 
-        command.SetHandler(async (idInput, maxLines) =>
+        // 选项：版本号
+        var versionOption = new Option<int?>(
+            aliases: new[] { "--version", "-v" },
+            description: "查看特定版本的内容");
+        command.AddOption(versionOption);
+
+        command.SetHandler(async (idInput, maxLines, version) =>
         {
             try
             {
                 using var scope = serviceProvider.CreateScope();
                 var fileStorage = scope.ServiceProvider.GetRequiredService<FileStorageService>();
+                var versionService = scope.ServiceProvider.GetRequiredService<IFileVersionService>();
 
                 // 尝试解析为 GUID
                 Guid fileId;
@@ -49,24 +56,49 @@ public static class FileContentCommand
                     return;
                 }
 
-                // 获取文件
-                var file = await fileStorage.GetFileAsync(fileId);
+                // 获取文件（可能是特定版本）
+                Infrastructure.FileStorage.Models.UploadedFile? file;
 
-                if (file == null)
+                if (version.HasValue)
                 {
-                    AnsiConsole.MarkupLine($"[yellow]未找到文件: {fileId}[/]");
-                    Environment.Exit(1);
-                    return;
+                    // 获取版本历史
+                    var versions = await versionService.GetVersionHistoryAsync(fileId);
+                    var targetVersion = versions.FirstOrDefault(v => v.Version == version.Value);
+
+                    if (targetVersion == null)
+                    {
+                        AnsiConsole.MarkupLine($"[red]✗ 版本不存在: v{version.Value}[/]");
+                        AnsiConsole.MarkupLine($"[dim]可用版本: {string.Join(", ", versions.Select(v => $"v{v.Version}"))}[/]");
+                        Environment.Exit(1);
+                        return;
+                    }
+
+                    file = targetVersion;
+                }
+                else
+                {
+                    file = await fileStorage.GetFileAsync(fileId);
+
+                    if (file == null)
+                    {
+                        AnsiConsole.MarkupLine($"[yellow]未找到文件: {fileId}[/]");
+                        Environment.Exit(1);
+                        return;
+                    }
                 }
 
                 // 读取文件内容
                 var processedContent = await fileStorage.ReadFileContentAsync(file);
 
                 // 显示文件头部信息
+                var versionInfo = version.HasValue
+                    ? $"\n[cyan]版本:[/] v{file.Version} {(file.IsLatest ? "[green](最新)[/]" : "[dim](历史)[/]")}"
+                    : "";
+
                 var headerPanel = new Panel(new Markup($"""
                     [cyan]文件名:[/] {file.FileName}
                     [cyan]类型:[/] {file.FileType}
-                    [cyan]大小:[/] {FormatFileSize(file.FileSize)}
+                    [cyan]大小:[/] {FormatFileSize(file.FileSize)}{versionInfo}
                     {(processedContent.IsTruncated ? $"[yellow]⚠ 内容已截断（原始: {processedContent.OriginalLength} 字符，显示: {processedContent.ProcessedLength} 字符）[/]" : "")}
                     """))
                 {
@@ -125,7 +157,7 @@ public static class FileContentCommand
                 AnsiConsole.MarkupLine($"[red]✗ 读取文件内容失败: {ex.Message}[/]");
                 Environment.Exit(1);
             }
-        }, idArgument, linesOption);
+        }, idArgument, linesOption, versionOption);
 
         return command;
     }
