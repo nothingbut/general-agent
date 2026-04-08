@@ -10,6 +10,7 @@
   <Folder Name="/tests/">
     <Project Path="tests/GeneralAgent.Core.Tests/GeneralAgent.Core.Tests.csproj" />
     <Project Path="tests/GeneralAgent.Infrastructure.LLM.Tests/GeneralAgent.Infrastructure.LLM.Tests.csproj" />
+    <Project Path="tests/GeneralAgent.Infrastructure.SkillExtraction.Tests/GeneralAgent.Infrastructure.SkillExtraction.Tests.csproj" />
     <Project Path="tests/GeneralAgent.Infrastructure.Skills.Tests/GeneralAgent.Infrastructure.Skills.Tests.csproj" />
     <Project Path="tests/GeneralAgent.Infrastructure.Tests/GeneralAgent.Infrastructure.Tests.csproj" />
     <Project Path="tests/GeneralAgent.Application.Tests/GeneralAgent.Application.Tests.csproj" />

@@ -31,6 +31,7 @@ public static class ServiceCollectionExtensions
 
         // 注册仓储
         services.TryAddSingleton<FileRepository>();
+        services.TryAddSingleton<IFilePermissionRepository, FilePermissionRepository>();
 
         // 注册文件处理器
         services.TryAddSingleton<IFileProcessor, TextFileProcessor>();
@@ -42,6 +43,11 @@ public static class ServiceCollectionExtensions
 
         // 注册文件存储服务
         services.TryAddSingleton<FileStorageService>();
+
+        // 注册跨会话文件访问服务
+        services.TryAddSingleton<IFilePermissionService, FilePermissionService>();
+        services.TryAddSingleton<IFileLibraryService, FileLibraryService>();
+        services.TryAddSingleton<IFileVersionService, FileVersionService>();
 
         // 注册文件引用解析器
         services.TryAddSingleton<FileReferenceParser>();

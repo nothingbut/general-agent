@@ -1,5 +1,6 @@
 using GeneralAgent.Core.Models;
 using GeneralAgent.Infrastructure.Compression.Models;
+using GeneralAgent.Infrastructure.SkillExtraction.Models;
 using Microsoft.EntityFrameworkCore;
 
 namespace GeneralAgent.Infrastructure.Storage;
@@ -38,6 +39,11 @@ public sealed class AgentDbContext : DbContext
     /// 压缩配置集合
     /// </summary>
     public DbSet<CompressionConfig> CompressionConfigs => Set<CompressionConfig>();
+
+    /// <summary>
+    /// 技能提取历史记录集合
+    /// </summary>
+    public DbSet<ExtractionRecord> ExtractionRecords => Set<ExtractionRecord>();
 
     protected override void OnModelCreating(ModelBuilder modelBuilder)
     {

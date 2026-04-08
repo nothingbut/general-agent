@@ -1,3 +1,4 @@
+using GeneralAgent.Infrastructure.FileStorage.Migrations;
 using GeneralAgent.Infrastructure.FileStorage.Models;
 using Microsoft.Data.Sqlite;
 using Microsoft.Extensions.Logging;
@@ -37,10 +38,12 @@ public class FileRepository
         const string sql = @"
             INSERT INTO uploaded_files (
                 id, session_id, file_name, file_path, file_type,
-                file_size, mime_type, uploaded_at, summary, tags, metadata
+                file_size, mime_type, uploaded_at, summary, tags, metadata,
+                owner_id, access_level, version, parent_file_id, updated_at, is_latest
             ) VALUES (
                 @Id, @SessionId, @FileName, @FilePath, @FileType,
-                @FileSize, @MimeType, @UploadedAt, @Summary, @Tags, @Metadata
+                @FileSize, @MimeType, @UploadedAt, @Summary, @Tags, @Metadata,
+                @OwnerId, @AccessLevel, @Version, @ParentFileId, @UpdatedAt, @IsLatest
             )";
 
         await using var command = new SqliteCommand(sql, connection);
@@ -55,6 +58,12 @@ public class FileRepository
         command.Parameters.AddWithValue("@Summary", (object?)file.Summary ?? DBNull.Value);
         command.Parameters.AddWithValue("@Tags", (object?)file.Tags ?? DBNull.Value);
         command.Parameters.AddWithValue("@Metadata", (object?)file.Metadata ?? DBNull.Value);
+        command.Parameters.AddWithValue("@OwnerId", file.OwnerId);
+        command.Parameters.AddWithValue("@AccessLevel", (int)file.AccessLevel);
+        command.Parameters.AddWithValue("@Version", file.Version);
+        command.Parameters.AddWithValue("@ParentFileId", file.ParentFileId.HasValue ? file.ParentFileId.Value.ToString() : (object)DBNull.Value);
+        command.Parameters.AddWithValue("@UpdatedAt", file.UpdatedAt.HasValue ? file.UpdatedAt.Value.ToString("O") : (object)DBNull.Value);
+        command.Parameters.AddWithValue("@IsLatest", file.IsLatest ? 1 : 0);
 
         await command.ExecuteNonQueryAsync(cancellationToken);
 
@@ -153,7 +162,9 @@ public class FileRepository
             UPDATE uploaded_files SET
                 summary = @Summary,
                 tags = @Tags,
-                metadata = @Metadata
+                metadata = @Metadata,
+                access_level = @AccessLevel,
+                updated_at = @UpdatedAt
             WHERE id = @Id";
 
         await using var command = new SqliteCommand(sql, connection);
@@ -161,6 +172,8 @@ public class FileRepository
         command.Parameters.AddWithValue("@Summary", (object?)file.Summary ?? DBNull.Value);
         command.Parameters.AddWithValue("@Tags", (object?)file.Tags ?? DBNull.Value);
         command.Parameters.AddWithValue("@Metadata", (object?)file.Metadata ?? DBNull.Value);
+        command.Parameters.AddWithValue("@AccessLevel", (int)file.AccessLevel);
+        command.Parameters.AddWithValue("@UpdatedAt", file.UpdatedAt.HasValue ? file.UpdatedAt.Value.ToString("O") : (object)DBNull.Value);
 
         await command.ExecuteNonQueryAsync(cancellationToken);
 
@@ -192,6 +205,168 @@ public class FileRepository
     }
 
     /// <summary>
+    /// 根据所有者列出文件
+    /// </summary>
+    public async Task<List<UploadedFile>> ListByOwnerAsync(
+        string ownerId,
+        CancellationToken cancellationToken = default)
+    {
+        await using var connection = new SqliteConnection(_connectionString);
+        await connection.OpenAsync(cancellationToken);
+
+        const string sql = @"
+            SELECT * FROM uploaded_files
+            WHERE owner_id = @OwnerId AND is_latest = 1
+            ORDER BY uploaded_at DESC";
+
+        await using var command = new SqliteCommand(sql, connection);
+        command.Parameters.AddWithValue("@OwnerId", ownerId);
+
+        var files = new List<UploadedFile>();
+        await using var reader = await command.ExecuteReaderAsync(cancellationToken);
+        while (await reader.ReadAsync(cancellationToken))
+        {
+            files.Add(MapToUploadedFile(reader));
+        }
+
+        return files;
+    }
+
+    /// <summary>
+    /// 根据访问级别列出文件
+    /// </summary>
+    public async Task<List<UploadedFile>> ListByAccessLevelAsync(
+        FileAccessLevel accessLevel,
+        CancellationToken cancellationToken = default)
+    {
+        await using var connection = new SqliteConnection(_connectionString);
+        await connection.OpenAsync(cancellationToken);
+
+        const string sql = @"
+            SELECT * FROM uploaded_files
+            WHERE access_level = @AccessLevel AND is_latest = 1
+            ORDER BY uploaded_at DESC";
+
+        await using var command = new SqliteCommand(sql, connection);
+        command.Parameters.AddWithValue("@AccessLevel", (int)accessLevel);
+
+        var files = new List<UploadedFile>();
+        await using var reader = await command.ExecuteReaderAsync(cancellationToken);
+        while (await reader.ReadAsync(cancellationToken))
+        {
+            files.Add(MapToUploadedFile(reader));
+        }
+
+        return files;
+    }
+
+    /// <summary>
+    /// 搜索文件（按名称、标签、摘要）
+    /// </summary>
+    public async Task<List<UploadedFile>> SearchAsync(
+        string keyword,
+        string? ownerId = null,
+        CancellationToken cancellationToken = default)
+    {
+        await using var connection = new SqliteConnection(_connectionString);
+        await connection.OpenAsync(cancellationToken);
+
+        var sql = @"
+            SELECT * FROM uploaded_files
+            WHERE is_latest = 1 AND (
+                file_name LIKE @Keyword OR
+                tags LIKE @Keyword OR
+                summary LIKE @Keyword
+            )";
+
+        if (!string.IsNullOrEmpty(ownerId))
+        {
+            sql += " AND owner_id = @OwnerId";
+        }
+
+        sql += " ORDER BY uploaded_at DESC";
+
+        await using var command = new SqliteCommand(sql, connection);
+        command.Parameters.AddWithValue("@Keyword", $"%{keyword}%");
+
+        if (!string.IsNullOrEmpty(ownerId))
+        {
+            command.Parameters.AddWithValue("@OwnerId", ownerId);
+        }
+
+        var files = new List<UploadedFile>();
+        await using var reader = await command.ExecuteReaderAsync(cancellationToken);
+        while (await reader.ReadAsync(cancellationToken))
+        {
+            files.Add(MapToUploadedFile(reader));
+        }
+
+        return files;
+    }
+
+    /// <summary>
+    /// 获取文件的所有版本
+    /// </summary>
+    public async Task<List<UploadedFile>> GetVersionsAsync(
+        Guid rootFileId,
+        CancellationToken cancellationToken = default)
+    {
+        await using var connection = new SqliteConnection(_connectionString);
+        await connection.OpenAsync(cancellationToken);
+
+        // 使用递归 CTE 查找版本链
+        const string sql = @"
+            WITH RECURSIVE version_chain AS (
+                -- 基础情况：根文件
+                SELECT * FROM uploaded_files WHERE id = @RootFileId
+                UNION ALL
+                -- 递归情况：子版本
+                SELECT f.* FROM uploaded_files f
+                INNER JOIN version_chain vc ON f.parent_file_id = vc.id
+            )
+            SELECT * FROM version_chain
+            ORDER BY version ASC";
+
+        await using var command = new SqliteCommand(sql, connection);
+        command.Parameters.AddWithValue("@RootFileId", rootFileId.ToString());
+
+        var files = new List<UploadedFile>();
+        await using var reader = await command.ExecuteReaderAsync(cancellationToken);
+        while (await reader.ReadAsync(cancellationToken))
+        {
+            files.Add(MapToUploadedFile(reader));
+        }
+
+        return files;
+    }
+
+    /// <summary>
+    /// 获取最新版本的文件
+    /// </summary>
+    public async Task<UploadedFile?> GetLatestVersionAsync(
+        Guid rootFileId,
+        CancellationToken cancellationToken = default)
+    {
+        var versions = await GetVersionsAsync(rootFileId, cancellationToken);
+        return versions.FirstOrDefault(f => f.IsLatest);
+    }
+
+    /// <summary>
+    /// 标记旧版本为非最新
+    /// </summary>
+    public async Task MarkAsNotLatestAsync(Guid fileId, CancellationToken cancellationToken = default)
+    {
+        await using var connection = new SqliteConnection(_connectionString);
+        await connection.OpenAsync(cancellationToken);
+
+        const string sql = "UPDATE uploaded_files SET is_latest = 0 WHERE id = @Id";
+        await using var command = new SqliteCommand(sql, connection);
+        command.Parameters.AddWithValue("@Id", fileId.ToString());
+
+        await command.ExecuteNonQueryAsync(cancellationToken);
+    }
+
+    /// <summary>
     /// 初始化数据库和表结构
     /// </summary>
     private void EnsureDatabaseInitialized()
@@ -207,6 +382,7 @@ public class FileRepository
         using var connection = new SqliteConnection(_connectionString);
         connection.Open();
 
+        // 创建基础表结构
         const string createTableSql = @"
             CREATE TABLE IF NOT EXISTS uploaded_files (
                 id TEXT PRIMARY KEY,
@@ -230,7 +406,12 @@ public class FileRepository
         using var command = new SqliteCommand(createTableSql, connection);
         command.ExecuteNonQuery();
 
-        _logger.LogDebug("数据库已初始化: {DatabasePath}", _options.DatabasePath);
+        _logger.LogDebug("数据库基础表已初始化: {DatabasePath}", _options.DatabasePath);
+
+        // 应用数据库迁移
+        var migrationLogger = new Microsoft.Extensions.Logging.Abstractions.NullLogger<DatabaseMigrationManager>();
+        var migrationManager = new DatabaseMigrationManager(_options.DatabasePath, migrationLogger);
+        migrationManager.ApplyMigrationsAsync().GetAwaiter().GetResult();
     }
 
     /// <summary>
@@ -258,7 +439,17 @@ public class FileRepository
                 : reader.GetString(reader.GetOrdinal("tags")),
             Metadata = reader.IsDBNull(reader.GetOrdinal("metadata"))
                 ? null
-                : reader.GetString(reader.GetOrdinal("metadata"))
+                : reader.GetString(reader.GetOrdinal("metadata")),
+            OwnerId = reader.GetString(reader.GetOrdinal("owner_id")),
+            AccessLevel = (FileAccessLevel)reader.GetInt32(reader.GetOrdinal("access_level")),
+            Version = reader.GetInt32(reader.GetOrdinal("version")),
+            ParentFileId = reader.IsDBNull(reader.GetOrdinal("parent_file_id"))
+                ? null
+                : Guid.Parse(reader.GetString(reader.GetOrdinal("parent_file_id"))),
+            UpdatedAt = reader.IsDBNull(reader.GetOrdinal("updated_at"))
+                ? null
+                : DateTime.Parse(reader.GetString(reader.GetOrdinal("updated_at"))),
+            IsLatest = reader.GetInt32(reader.GetOrdinal("is_latest")) == 1
         };
     }
 }

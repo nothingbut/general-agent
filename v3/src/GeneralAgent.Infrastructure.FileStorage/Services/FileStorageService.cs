@@ -33,6 +33,8 @@ public class FileStorageService
     /// </summary>
     /// <param name="sourceFilePath">源文件路径</param>
     /// <param name="sessionId">会话 ID</param>
+    /// <param name="ownerId">文件所有者 ID</param>
+    /// <param name="accessLevel">访问级别（默认私有）</param>
     /// <param name="cancellationToken">取消令牌</param>
     /// <returns>上传后的文件记录</returns>
     /// <exception cref="ArgumentException">文件不存在或不支持</exception>
@@ -40,6 +42,8 @@ public class FileStorageService
     public async Task<UploadedFile> UploadFileAsync(
         string sourceFilePath,
         string sessionId,
+        string ownerId,
+        FileAccessLevel accessLevel = FileAccessLevel.Private,
         CancellationToken cancellationToken = default)
     {
         // 1. 验证文件存在
@@ -97,7 +101,9 @@ public class FileStorageService
             filePath: relativePath,
             fileType: fileType,
             fileSize: fileSize,
-            mimeType: GetMimeType(fileType));
+            ownerId: ownerId,
+            mimeType: GetMimeType(fileType),
+            accessLevel: accessLevel);
 
         // 9. 保存元数据
         await _repository.SaveAsync(uploadedFile, cancellationToken);
