@@ -1,0 +1,24 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <ItemGroup>
+    <ProjectReference Include="..\GeneralAgent.Core\GeneralAgent.Core.csproj" />
+    <ProjectReference Include="..\GeneralAgent.Infrastructure\GeneralAgent.Infrastructure.csproj" />
+    <ProjectReference Include="..\GeneralAgent.Infrastructure.Skills\GeneralAgent.Infrastructure.Skills.csproj" />
+    <ProjectReference Include="..\GeneralAgent.Infrastructure.Memory\GeneralAgent.Infrastructure.Memory.csproj" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <PackageReference Include="Cronos" />
+    <PackageReference Include="Microsoft.Data.Sqlite" />
+    <PackageReference Include="Microsoft.Extensions.Logging.Abstractions" />
+    <PackageReference Include="Microsoft.Extensions.Options" />
+    <PackageReference Include="Microsoft.Extensions.Hosting.Abstractions" />
+  </ItemGroup>
+
+  <PropertyGroup>
+    <TargetFramework>net10.0</TargetFramework>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <Nullable>enable</Nullable>
+  </PropertyGroup>
+
+</Project>
