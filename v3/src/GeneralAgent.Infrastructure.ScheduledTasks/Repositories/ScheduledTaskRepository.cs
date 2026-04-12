@@ -267,6 +267,27 @@ public class ScheduledTaskRepository : IScheduledTaskRepository
     }
 
     /// <summary>
+    /// 列出所有任务
+    /// </summary>
+    public async Task<List<ScheduledTask>> ListAllAsync(CancellationToken cancellationToken = default)
+    {
+        await using var connection = new SqliteConnection(_connectionString);
+        await connection.OpenAsync(cancellationToken);
+
+        const string sql = "SELECT * FROM scheduled_tasks ORDER BY created_at DESC";
+        await using var command = new SqliteCommand(sql, connection);
+
+        var tasks = new List<ScheduledTask>();
+        await using var reader = await command.ExecuteReaderAsync(cancellationToken);
+        while (await reader.ReadAsync(cancellationToken))
+        {
+            tasks.Add(MapToScheduledTask(reader));
+        }
+
+        return tasks;
+    }
+
+    /// <summary>
     /// 映射 SqliteDataReader 到 ScheduledTask
     /// </summary>
     private ScheduledTask MapToScheduledTask(SqliteDataReader reader)

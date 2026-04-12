@@ -1,7 +1,9 @@
+using System.Text.Json;
 using GeneralAgent.Core.Models;
 using GeneralAgent.Infrastructure.Compression.Models;
 using GeneralAgent.Infrastructure.SkillExtraction.Models;
 using Microsoft.EntityFrameworkCore;
+using Microsoft.EntityFrameworkCore.ChangeTracking;
 
 namespace GeneralAgent.Infrastructure.Storage;
 
@@ -51,5 +53,27 @@ public sealed class AgentDbContext : DbContext
 
         // 应用所有配置
         modelBuilder.ApplyConfigurationsFromAssembly(typeof(AgentDbContext).Assembly);
+
+        // 配置 Message.Metadata 的 value comparer
+        modelBuilder.Entity<Message>()
+            .Property(m => m.Metadata)
+            .Metadata.SetValueComparer(
+                new ValueComparer<Dictionary<string, JsonElement>?>(
+                    (c1, c2) => JsonSerializer.Serialize(c1) == JsonSerializer.Serialize(c2),
+                    c => c == null ? 0 : JsonSerializer.Serialize(c).GetHashCode(),
+                    c => c == null ? null : JsonSerializer.Deserialize<Dictionary<string, JsonElement>>(JsonSerializer.Serialize(c))
+                )
+            );
+
+        // 配置 ExtractionRecord.Metadata 的 value comparer
+        modelBuilder.Entity<ExtractionRecord>()
+            .Property(e => e.Metadata)
+            .Metadata.SetValueComparer(
+                new ValueComparer<Dictionary<string, object>?>(
+                    (c1, c2) => JsonSerializer.Serialize(c1) == JsonSerializer.Serialize(c2),
+                    c => c == null ? 0 : JsonSerializer.Serialize(c).GetHashCode(),
+                    c => c == null ? null : JsonSerializer.Deserialize<Dictionary<string, object>>(JsonSerializer.Serialize(c))
+                )
+            );
     }
 }

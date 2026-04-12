@@ -1,4 +1,5 @@
 using GeneralAgent.Core.Abstractions;
+using GeneralAgent.Infrastructure.Caching;
 using GeneralAgent.Infrastructure.Compression.Services;
 using GeneralAgent.Infrastructure.Storage;
 using GeneralAgent.Infrastructure.Storage.Repositories;
@@ -31,6 +32,12 @@ public static class DependencyInjection
         services.AddScoped<IMessageRepository, MessageRepository>();
         services.AddScoped<ICompressionHistoryRepository, CompressionHistoryRepository>();
         services.AddScoped<ICompressionConfigRepository, CompressionConfigRepository>();
+
+        // 注册缓存服务
+        services.AddSingleton<ISearchQueryCache>(new SearchQueryCache(
+            capacity: 100,
+            ttl: TimeSpan.FromHours(1)
+        ));
 
         return services;
     }

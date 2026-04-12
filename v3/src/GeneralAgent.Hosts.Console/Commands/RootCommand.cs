@@ -35,6 +35,7 @@ public static class AgentRootCommand
         rootCommand.AddCommand(SkillCommand.Create(serviceProvider));
         rootCommand.AddCommand(ConfigCommand.Create(serviceProvider));
         rootCommand.AddCommand(FileCommand.Create(serviceProvider));
+        rootCommand.AddCommand(TaskCommand.Create(serviceProvider));
 
         // 默认行为：启动 REPL
         rootCommand.SetHandler(async (verbose) =>

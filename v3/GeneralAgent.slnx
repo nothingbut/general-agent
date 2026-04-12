@@ -5,6 +5,8 @@
     <Project Path="src/GeneralAgent.Infrastructure.SkillExtraction/GeneralAgent.Infrastructure.SkillExtraction.csproj" />
     <Project Path="src/GeneralAgent.Infrastructure.Skills/GeneralAgent.Infrastructure.Skills.csproj" />
     <Project Path="src/GeneralAgent.Infrastructure.ScheduledTasks/GeneralAgent.Infrastructure.ScheduledTasks.csproj" />
+    <Project Path="src/GeneralAgent.Infrastructure.FileStorage/GeneralAgent.Infrastructure.FileStorage.csproj" />
+    <Project Path="src/GeneralAgent.Infrastructure.Compression/GeneralAgent.Infrastructure.Compression.csproj" />
     <Project Path="src/GeneralAgent.Infrastructure/GeneralAgent.Infrastructure.csproj" />
     <Project Path="src/GeneralAgent.Application/GeneralAgent.Application.csproj" />
   </Folder>
@@ -14,6 +16,7 @@
     <Project Path="tests/GeneralAgent.Infrastructure.SkillExtraction.Tests/GeneralAgent.Infrastructure.SkillExtraction.Tests.csproj" />
     <Project Path="tests/GeneralAgent.Infrastructure.Skills.Tests/GeneralAgent.Infrastructure.Skills.Tests.csproj" />
     <Project Path="tests/GeneralAgent.Infrastructure.Tests/GeneralAgent.Infrastructure.Tests.csproj" />
+    <Project Path="tests/GeneralAgent.Infrastructure.FileStorage.Tests/GeneralAgent.Infrastructure.FileStorage.Tests.csproj" />
     <Project Path="tests/GeneralAgent.Application.Tests/GeneralAgent.Application.Tests.csproj" />
   </Folder>
 </Solution>

@@ -24,6 +24,7 @@
     <ProjectReference Include="..\..\src\GeneralAgent.Infrastructure.Embedding\GeneralAgent.Infrastructure.Embedding.csproj" />
     <ProjectReference Include="..\..\src\GeneralAgent.Infrastructure.VectorDB\GeneralAgent.Infrastructure.VectorDB.csproj" />
     <ProjectReference Include="..\..\src\GeneralAgent.Infrastructure.Memory\GeneralAgent.Infrastructure.Memory.csproj" />
+    <ProjectReference Include="..\..\src\GeneralAgent.Infrastructure.ScheduledTasks\GeneralAgent.Infrastructure.ScheduledTasks.csproj" />
     <ProjectReference Include="..\..\src\GeneralAgent.Application\GeneralAgent.Application.csproj" />
     <ProjectReference Include="..\..\src\GeneralAgent.Hosts.Console\GeneralAgent.Hosts.Console.csproj" />
     <ProjectReference Include="..\..\src\GeneralAgent.Infrastructure.Skills\GeneralAgent.Infrastructure.Skills.csproj" />

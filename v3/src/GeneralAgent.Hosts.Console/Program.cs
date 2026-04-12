@@ -11,7 +11,9 @@ using GeneralAgent.Infrastructure.Memory;
 using GeneralAgent.Infrastructure.Storage;
 using GeneralAgent.Infrastructure.Embedding;
 using GeneralAgent.Infrastructure.VectorDB;
+using GeneralAgent.Infrastructure.Compression;
 using GeneralAgent.Infrastructure.FileStorage.Extensions;
+using GeneralAgent.Infrastructure.ScheduledTasks.Extensions;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
@@ -33,8 +35,10 @@ try
     builder.Services.AddLLMInfrastructure(builder.Configuration);
     builder.Services.AddEmbeddingInfrastructure(builder.Configuration);
     builder.Services.AddVectorDB(builder.Configuration);
+    builder.Services.AddCompression(enableCaching: true, cacheDuration: TimeSpan.FromMinutes(5));
     builder.Services.AddMemoryServices(builder.Configuration);
     builder.Services.AddFileStorage();
+    builder.Services.AddScheduledTasks(builder.Configuration);
     builder.Services.AddApplicationLayer(builder.Configuration);
     builder.Services.AddHostedService<BackgroundTaskService>();
 
@@ -51,6 +55,11 @@ try
         options.LogToStandardErrorThreshold = LogLevel.Error;
     });
     builder.Logging.SetMinimumLevel(LogLevel.Warning); // 只显示警告和错误
+
+    // 抑制 EF Core 详细日志
+    builder.Logging.AddFilter("Microsoft.EntityFrameworkCore", LogLevel.Warning);
+    builder.Logging.AddFilter("Microsoft.EntityFrameworkCore.Database.Command", LogLevel.Warning);
+    builder.Logging.AddFilter("Microsoft.EntityFrameworkCore.Migrations", LogLevel.Warning);
 
     var host = builder.Build();
 

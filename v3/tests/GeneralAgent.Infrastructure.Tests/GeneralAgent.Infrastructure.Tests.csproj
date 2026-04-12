@@ -15,6 +15,7 @@
     <PackageReference Include="Microsoft.NET.Test.Sdk" />
     <PackageReference Include="Microsoft.EntityFrameworkCore.Sqlite" />
     <PackageReference Include="NSubstitute" />
+    <PackageReference Include="Moq" />
     <PackageReference Include="Microsoft.Extensions.Logging.Abstractions" />
   </ItemGroup>
 
@@ -27,6 +28,7 @@
     <ProjectReference Include="..\..\src\GeneralAgent.Infrastructure\GeneralAgent.Infrastructure.csproj" />
     <ProjectReference Include="..\..\src\GeneralAgent.Infrastructure.Compression\GeneralAgent.Infrastructure.Compression.csproj" />
     <ProjectReference Include="..\..\src\GeneralAgent.Infrastructure.Memory\GeneralAgent.Infrastructure.Memory.csproj" />
+    <ProjectReference Include="..\..\src\GeneralAgent.Infrastructure.ScheduledTasks\GeneralAgent.Infrastructure.ScheduledTasks.csproj" />
   </ItemGroup>
 
 </Project>

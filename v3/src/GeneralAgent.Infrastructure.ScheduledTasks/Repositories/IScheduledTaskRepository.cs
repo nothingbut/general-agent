@@ -47,4 +47,9 @@ public interface IScheduledTaskRepository
     /// 列出用户的指定状态的任务
     /// </summary>
     Task<List<ScheduledTask>> ListByOwnerAndStatusAsync(string ownerId, TaskStatus status, CancellationToken cancellationToken = default);
+
+    /// <summary>
+    /// 列出所有任务
+    /// </summary>
+    Task<List<ScheduledTask>> ListAllAsync(CancellationToken cancellationToken = default);
 }

@@ -47,6 +47,14 @@ public static class DependencyInjection
         // 注册工厂（单例）
         services.AddSingleton<ILLMClientFactory, LLMClientFactory>();
 
+        // 注册默认 ILLMClient（Scoped）
+        // 使用 factory 创建默认提供商的客户端
+        services.AddScoped<ILLMClient>(provider =>
+        {
+            var factory = provider.GetRequiredService<ILLMClientFactory>();
+            return factory.GetClient(); // 使用默认提供商
+        });
+
         return services;
     }
 }
