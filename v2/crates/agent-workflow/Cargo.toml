@@ -8,8 +8,12 @@ agent-core = { path = "../agent-core" }
 agent-storage = { path = "../agent-storage" }
 agent-llm = { path = "../agent-llm" }
 agent-skills = { path = "../agent-skills" }
+agent-context-compression = { path = "../agent-context-compression", optional = true }
+agent-memory = { path = "../agent-memory", optional = true }
+agent-file-storage = { path = "../agent-file-storage", optional = true }
 agent-mcp = { path = "../agent-mcp", optional = true }
 agent-rag = { path = "../agent-rag", optional = true }
+agent-multi-agent = { path = "../agent-multi-agent", optional = true }
 
 # 异步运行时
 tokio = { version = "1", features = ["full"] }
@@ -46,10 +50,15 @@ futures = "0.3"               # Future 工具
 
 [features]
 default = []
+compression = ["dep:agent-context-compression"]
+memory = ["dep:agent-memory"]
+file-storage = ["dep:agent-file-storage"]
 mcp = ["dep:agent-mcp"]
 rag = ["dep:agent-rag"]
+multi-agent = ["dep:agent-multi-agent"]
 
 [dev-dependencies]
 tokio-test = "0.4"
 sqlx = { workspace = true }
 tracing-subscriber = { workspace = true }
+tempfile = "3.8"
