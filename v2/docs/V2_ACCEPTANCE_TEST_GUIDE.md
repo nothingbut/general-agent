@@ -18,9 +18,11 @@ cargo --version
 # 确认 Ollama（可选，LLM 功能需要）
 ollama --version
 ollama serve &     # 后台启动
-ollama pull qwen2.5:0.5b   # 轻量模型用于测试
+ollama pull qwen2.5:7b-instruct   # 轻量模型用于测试
 
 # 确认 Qdrant（可选，向量检索需要）
+# 如果使用 Colima 作为 Docker 运行时，需先启动：
+colima start
 docker run -d --name qdrant -p 6333:6333 -p 6334:6334 qdrant/qdrant
 ```
 
@@ -29,7 +31,7 @@ docker run -d --name qdrant -p 6333:6333 -p 6334:6334 qdrant/qdrant
 ```bash
 export AGENT_DB=./test_agent.db
 export AGENT_PROVIDER=ollama
-export OLLAMA_MODEL=qwen2.5:0.5b
+export OLLAMA_MODEL=qwen2.5:7b-instruct
 export OLLAMA_BASE_URL=http://localhost:11434
 ```
 

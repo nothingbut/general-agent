@@ -163,7 +163,7 @@ v2/
 ### 使用 Ollama（推荐用于开发）
 
 ```bash
-ollama pull qwen3.5:0.8b            # 对话模型
+ollama pull qwen2.5:7b-instruct     # 对话模型
 ollama pull nomic-embed-text        # Embedding 模型
 ollama serve
 
@@ -183,7 +183,7 @@ cargo run --package agent-cli -- --provider anthropic chat <session-id>
 export AGENT_DB=./agent.db           # 数据库路径
 export AGENT_PROVIDER=ollama         # LLM 提供商
 export ANTHROPIC_API_KEY=sk-ant-xxx  # Anthropic API Key
-export OLLAMA_MODEL=qwen3.5:0.8b    # Ollama 模型
+export OLLAMA_MODEL=qwen2.5:7b-instruct  # Ollama 模型
 export OLLAMA_BASE_URL=http://localhost:11434
 ```
 
