@@ -1,0 +1,43 @@
+[package]
+name = "agent-file-storage"
+version.workspace = true
+edition.workspace = true
+authors.workspace = true
+license.workspace = true
+repository.workspace = true
+description = "文件上传存储系统 - 支持权限管理、版本控制、对话引用"
+
+[dependencies]
+# 异步
+tokio = { workspace = true }
+async-trait = { workspace = true }
+
+# 数据库
+sqlx = { workspace = true }
+
+# 序列化
+serde = { workspace = true }
+serde_json = { workspace = true }
+
+# UUID
+uuid = { workspace = true }
+
+# 时间
+chrono = { workspace = true }
+
+# 错误处理
+thiserror = { workspace = true }
+
+# 日志
+tracing = { workspace = true }
+
+# MIME 类型检测
+mime_guess = "2.0"
+mime = "0.3"
+
+# SHA256 哈希
+sha2 = "0.10"
+hex = "0.4"
+
+[dev-dependencies]
+tempfile = "3.8"

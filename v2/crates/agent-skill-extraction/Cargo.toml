@@ -1,0 +1,41 @@
+[package]
+name = "agent-skill-extraction"
+version.workspace = true
+edition.workspace = true
+authors.workspace = true
+license.workspace = true
+repository.workspace = true
+description = "LLM 驱动的技能抽取系统 - 从对话中识别可复用模式并生成技能定义"
+
+[dependencies]
+agent-core = { path = "../agent-core" }
+agent-skills = { path = "../agent-skills" }
+
+# 异步
+tokio = { workspace = true }
+async-trait = { workspace = true }
+
+# 数据库
+sqlx = { workspace = true }
+
+# 序列化
+serde = { workspace = true }
+serde_json = { workspace = true }
+
+# UUID
+uuid = { workspace = true }
+
+# 时间
+chrono = { workspace = true }
+
+# 错误处理
+thiserror = { workspace = true }
+
+# 日志
+tracing = { workspace = true }
+
+# 正则
+regex = "1"
+
+[dev-dependencies]
+tempfile = "3.8"
