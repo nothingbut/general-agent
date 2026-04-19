@@ -1,0 +1,54 @@
+[package]
+name = "agent-context-compression"
+version = "0.1.0"
+edition = "2021"
+authors = ["General Agent Team"]
+license = "MIT"
+description = "上下文压缩系统 - Token 计数和多种压缩策略"
+
+[dependencies]
+# Workspace dependencies
+agent-core = { path = "../agent-core" }
+agent-llm = { path = "../agent-llm" }
+
+# Token counting
+tiktoken-rs = "0.5"
+
+# Async
+tokio = { workspace = true }
+async-trait = { workspace = true }
+
+# Serialization
+serde = { workspace = true }
+serde_json = { workspace = true }
+
+# Error handling
+thiserror = { workspace = true }
+anyhow = { workspace = true }
+
+# UUID
+uuid = { workspace = true }
+
+# Time
+chrono = { workspace = true }
+
+# Logging
+tracing = { workspace = true }
+
+# Configuration
+config = "0.14"
+toml = "0.8"
+serde_yaml = "0.9"
+
+# Caching
+lru = "0.12"
+
+[dev-dependencies]
+mockito = { workspace = true }
+tokio-test = "0.4"
+tempfile = "3.8"
+criterion = { version = "0.5", features = ["async_tokio"] }
+
+[[bench]]
+name = "compression_benchmarks"
+harness = false

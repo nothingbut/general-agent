@@ -1,0 +1,35 @@
+# 上下文压缩系统配置文件
+
+[compression]
+# 自动压缩触发阈值（消息数）
+auto_trigger_threshold = 15
+
+# 滑动窗口大小
+sliding_window_size = 10
+
+# 语义压缩目标 token 数
+semantic_target_tokens = 2000
+
+# 是否启用自动压缩
+auto_compression_enabled = true
+
+[strategies.sliding_window]
+# 滑动窗口大小（保留的最近消息数）
+window_size = 10
+
+[strategies.semantic]
+# 语义压缩目标 token 数
+target_tokens = 2000
+
+# LLM 模型名称
+model = "claude-3-5-sonnet-20241022"
+
+[strategies.hierarchical]
+# 小对话阈值（消息数）
+small_threshold = 20
+
+# 大对话阈值（消息数）
+large_threshold = 50
+
+# 大对话 token 阈值
+large_token_threshold = 8000
