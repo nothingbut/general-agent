@@ -1,4 +1,4 @@
-//! 颜色主题
+//! 颜色主题（向后兼容 AppColors 常量）
 
 use ratatui::style::Color;
 

@@ -2,5 +2,53 @@
 name = "agent-api"
 version.workspace = true
 edition.workspace = true
+description = "Web API 服务 — 基于 Axum 0.7 的 RESTful API"
 
 [dependencies]
+# 内部 crate
+agent-core = { path = "../agent-core" }
+agent-workflow = { path = "../agent-workflow", features = ["memory", "file-storage", "multi-agent"] }
+agent-multi-agent = { path = "../agent-multi-agent" }
+agent-skills = { path = "../agent-skills" }
+agent-memory = { path = "../agent-memory" }
+agent-file-storage = { path = "../agent-file-storage" }
+agent-storage = { path = "../agent-storage" }
+
+# Web 框架
+axum = { workspace = true }
+tower-http = { workspace = true }
+tower = { workspace = true }
+
+# 异步运行时
+tokio = { workspace = true }
+tokio-stream = "0.1"
+futures = { workspace = true }
+async-stream = "0.3"
+
+# 序列化
+serde = { workspace = true }
+serde_json = { workspace = true }
+
+# UUID + 时间
+uuid = { workspace = true }
+chrono = { workspace = true }
+
+# 错误处理
+thiserror = { workspace = true }
+anyhow = { workspace = true }
+
+# 日志
+tracing = { workspace = true }
+tracing-subscriber = { workspace = true }
+
+# OpenAPI
+utoipa = { version = "4", features = ["axum_extras", "chrono", "uuid"] }
+utoipa-swagger-ui = { version = "6", features = ["axum"] }
+
+[dev-dependencies]
+axum-test = "14"
+tokio = { workspace = true, features = ["macros", "rt-multi-thread", "test-util"] }
+async-trait = { workspace = true }
+agent-storage = { path = "../agent-storage" }
+serde_json = { workspace = true }
+tempfile = "3.8"

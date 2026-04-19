@@ -4,7 +4,10 @@ use crate::{
     backend::{BackendCommand, BackendUpdate},
     event::{AppEvent, EventHandler},
     state::{AppState, FocusArea, MessageItem, SessionState},
-    ui::{self, PerformanceOverlay, SubagentOverlay},
+    ui::{
+        self, CommandAction, CommandPalette, HelpOverlay, NotificationManager, PerformanceOverlay,
+        SidePanel, SubagentOverlay, Theme,
+    },
     TuiResult,
 };
 use agent_workflow::{
@@ -25,51 +28,36 @@ use tokio::sync::mpsc;
 
 /// TUI 应用
 pub struct TuiApp {
-    /// 应用状态
     state: AppState,
-
-    /// 终端
     terminal: Terminal<CrosstermBackend<Stdout>>,
-
-    /// 后台命令发送器
     backend_tx: mpsc::UnboundedSender<BackendCommand>,
-
-    /// 后台更新接收器
     backend_rx: mpsc::UnboundedReceiver<BackendUpdate>,
-
-    /// 是否应该退出
     should_quit: bool,
-
-    /// Subagent overlay component
     subagent_overlay: SubagentOverlay,
-
-    /// Performance overlay component
     performance_overlay: PerformanceOverlay,
-
-    /// Performance monitor
+    help_overlay: HelpOverlay,
+    notifications: NotificationManager,
+    command_palette: CommandPalette,
+    side_panel: SidePanel,
+    theme: Theme,
     #[allow(dead_code)]
     performance_monitor: Arc<Mutex<PerformanceMonitor>>,
 }
 
 impl TuiApp {
-    /// 创建新应用
     pub fn new() -> TuiResult<(Self, mpsc::UnboundedReceiver<BackendCommand>)> {
-        // 设置终端
         enable_raw_mode()?;
         let mut stdout = io::stdout();
         stdout.execute(EnterAlternateScreen)?;
         let backend = CrosstermBackend::new(stdout);
         let terminal = Terminal::new(backend)?;
 
-        // 创建通信通道
         let (backend_tx, backend_cmd_rx) = mpsc::unbounded_channel();
         let (_backend_update_tx, backend_rx) = mpsc::unbounded_channel();
 
-        // Create a placeholder orchestrator (for now, without database)
         let orchestrator = Arc::new(SubagentOrchestrator::new(OrchestratorConfig::default()));
         let subagent_overlay = SubagentOverlay::new(orchestrator);
 
-        // Create performance monitor and overlay
         let performance_monitor = Arc::new(Mutex::new(PerformanceMonitor::new()));
         let performance_overlay = PerformanceOverlay::new(performance_monitor.clone());
 
@@ -81,31 +69,31 @@ impl TuiApp {
             should_quit: false,
             subagent_overlay,
             performance_overlay,
+            help_overlay: HelpOverlay::new(),
+            notifications: NotificationManager::new(),
+            command_palette: CommandPalette::new(),
+            side_panel: SidePanel::new(),
+            theme: Theme::default(),
             performance_monitor,
         };
 
         Ok((app, backend_cmd_rx))
     }
 
-    /// 使用外部更新通道创建应用
     pub fn new_with_channel(
         backend_rx: mpsc::UnboundedReceiver<BackendUpdate>,
     ) -> TuiResult<(Self, mpsc::UnboundedReceiver<BackendCommand>)> {
-        // 设置终端
         enable_raw_mode()?;
         let mut stdout = io::stdout();
         stdout.execute(EnterAlternateScreen)?;
         let backend = CrosstermBackend::new(stdout);
         let terminal = Terminal::new(backend)?;
 
-        // 创建命令通道
         let (backend_tx, backend_cmd_rx) = mpsc::unbounded_channel();
 
-        // Create a placeholder orchestrator (for now, without database)
         let orchestrator = Arc::new(SubagentOrchestrator::new(OrchestratorConfig::default()));
         let subagent_overlay = SubagentOverlay::new(orchestrator);
 
-        // Create performance monitor and overlay
         let performance_monitor = Arc::new(Mutex::new(PerformanceMonitor::new()));
         let performance_overlay = PerformanceOverlay::new(performance_monitor.clone());
 
@@ -117,42 +105,55 @@ impl TuiApp {
             should_quit: false,
             subagent_overlay,
             performance_overlay,
+            help_overlay: HelpOverlay::new(),
+            notifications: NotificationManager::new(),
+            command_palette: CommandPalette::new(),
+            side_panel: SidePanel::new(),
+            theme: Theme::default(),
             performance_monitor,
         };
 
         Ok((app, backend_cmd_rx))
     }
 
-    /// 运行应用
+    pub fn with_runtime(
+        runtime: Arc<agent_workflow::AgentRuntime>,
+    ) -> TuiResult<(Self, crate::backend_runner::BackendRunner)> {
+        let (update_tx, backend_rx) = mpsc::unbounded_channel();
+        let (app, cmd_rx) = Self::new_with_channel(backend_rx)?;
+        let runner = crate::backend_runner::BackendRunner::new(runtime, cmd_rx, update_tx);
+        Ok((app, runner))
+    }
+
     pub async fn run(&mut self) -> TuiResult<()> {
-        // 初始加载会话列表
         let _ = self.backend_tx.send(BackendCommand::LoadSessions);
 
         loop {
-            // 渲染 UI
             self.draw()?;
 
-            // 处理事件（非阻塞轮询）
             if self.handle_events().await? && self.should_quit {
                 break;
             }
 
-            // 处理后台更新（非阻塞）
-            if let Ok(update) = self.backend_rx.try_recv() {
+            while let Ok(update) = self.backend_rx.try_recv() {
                 self.handle_backend_update(update);
             }
 
-            // 短暂休眠避免 CPU 占用过高
+            self.notifications.tick();
+
             tokio::time::sleep(std::time::Duration::from_millis(16)).await;
         }
 
         Ok(())
     }
 
-    /// 绘制 UI
     fn draw(&mut self) -> TuiResult<()> {
         self.terminal.draw(|f| {
-            let layout = ui::calculate_layout(f.size());
+            let layout = if self.side_panel.is_visible() {
+                ui::calculate_layout(f.size())
+            } else {
+                ui::calculate_layout(f.size())
+            };
 
             ui::render_status_bar(f, layout.status_bar, &self.state);
             ui::render_session_list(f, layout.session_list, &self.state);
@@ -160,22 +161,66 @@ impl TuiApp {
             ui::render_input_box(f, layout.input_box, &self.state);
             ui::render_info_bar(f, layout.info_bar, &self.state);
 
-            // Render overlays as top layers
+            if self.side_panel.is_visible() {
+                let side_area = ratatui::layout::Rect {
+                    x: layout.chat_window.x,
+                    y: layout.chat_window.y,
+                    width: layout.chat_window.width / 3,
+                    height: layout.chat_window.height,
+                };
+                self.side_panel.render(f, side_area);
+            }
+
             self.subagent_overlay.render(f, f.size());
             self.performance_overlay.render(f, f.size());
+            self.help_overlay.render(f, f.size());
+            self.command_palette.render(f, f.size());
+            self.notifications.render(f, f.size());
         })?;
 
         Ok(())
     }
 
-    /// 处理事件
     async fn handle_events(&mut self) -> TuiResult<bool> {
         use crossterm::event::{KeyCode, KeyModifiers};
 
         if event::poll(std::time::Duration::from_millis(100))? {
             if let Event::Key(key) = event::read()? {
-                // Check if performance overlay is visible and handle its events first
-                if self.performance_overlay.is_visible() {
+                // 命令面板优先级最高
+                if self.command_palette.is_visible() {
+                    match key.code {
+                        KeyCode::Esc => {
+                            self.command_palette.toggle_visible();
+                        }
+                        KeyCode::Enter => {
+                            if let Some(action) = self.command_palette.confirm() {
+                                self.execute_command_action(action);
+                            }
+                        }
+                        KeyCode::Up => {
+                            self.command_palette.move_up();
+                        }
+                        KeyCode::Down => {
+                            self.command_palette.move_down();
+                        }
+                        KeyCode::Backspace => {
+                            self.command_palette.delete_char();
+                        }
+                        KeyCode::Char(c) => {
+                            self.command_palette.input_char(c);
+                        }
+                        _ => {}
+                    }
+                } else if self.help_overlay.is_visible() {
+                    match key.code {
+                        KeyCode::Esc | KeyCode::Char('h')
+                            if key.modifiers.contains(KeyModifiers::CONTROL) =>
+                        {
+                            self.help_overlay.toggle_visible();
+                        }
+                        _ => {}
+                    }
+                } else if self.performance_overlay.is_visible() {
                     match key.code {
                         KeyCode::Esc => {
                             self.performance_overlay.toggle_visible();
@@ -201,7 +246,6 @@ impl TuiApp {
                         _ => {}
                     }
                 } else if self.subagent_overlay.is_visible() {
-                    // Check if subagent overlay is visible
                     match key.code {
                         KeyCode::Esc => {
                             self.subagent_overlay.toggle_visible();
@@ -221,19 +265,53 @@ impl TuiApp {
                         }
                         _ => {}
                     }
+                } else if self.side_panel.is_visible() {
+                    match key.code {
+                        KeyCode::Esc => {
+                            self.side_panel.toggle_visible();
+                        }
+                        KeyCode::Tab => {
+                            self.side_panel.toggle_tab();
+                        }
+                        KeyCode::Up | KeyCode::Char('k') => {
+                            self.side_panel.move_up();
+                        }
+                        KeyCode::Down | KeyCode::Char('j') => {
+                            self.side_panel.move_down();
+                        }
+                        _ => {}
+                    }
                 } else {
-                    // Handle global hotkeys
+                    // 全局快捷键
                     if key.modifiers.contains(KeyModifiers::CONTROL) {
                         match key.code {
+                            KeyCode::Char('k') => {
+                                self.command_palette.toggle_visible();
+                            }
                             KeyCode::Char('s') => {
                                 self.subagent_overlay.toggle_visible();
-                                // Set current session context
                                 if let Some(session_id) = self.current_session_id() {
                                     self.subagent_overlay.set_current_session(session_id);
                                 }
                             }
+                            KeyCode::Char('h') => {
+                                self.help_overlay.toggle_visible();
+                            }
                             KeyCode::Char('p') => {
                                 self.performance_overlay.toggle_visible();
+                            }
+                            KeyCode::Char('t') => {
+                                self.theme = self.theme.toggle();
+                                self.notifications
+                                    .info(format!("主题已切换: {}", self.theme.mode_name()));
+                            }
+                            KeyCode::Char('m') => {
+                                self.side_panel.show_memory();
+                                let _ = self.backend_tx.send(BackendCommand::LoadMemories);
+                            }
+                            KeyCode::Char('f') => {
+                                self.side_panel.show_files();
+                                let _ = self.backend_tx.send(BackendCommand::LoadFiles);
                             }
                             _ => {
                                 if let Some(app_event) =
@@ -246,7 +324,6 @@ impl TuiApp {
                     } else if let Some(app_event) =
                         EventHandler::map_key_event(key, self.state.focus)
                     {
-                        // Handle normal app events
                         self.handle_app_event(app_event)?;
                     }
                 }
@@ -257,7 +334,68 @@ impl TuiApp {
         }
     }
 
-    /// 处理应用事件
+    fn execute_command_action(&mut self, action: CommandAction) {
+        match action {
+            CommandAction::NewSession => {
+                let title = format!("会话 {}", chrono::Local::now().format("%m-%d %H:%M"));
+                let _ = self
+                    .backend_tx
+                    .send(BackendCommand::CreateSession { title: Some(title) });
+            }
+            CommandAction::DeleteSession => {
+                if let Some(session_id) = self.state.selected_session_id() {
+                    let _ = self
+                        .backend_tx
+                        .send(BackendCommand::DeleteSession { session_id });
+                }
+            }
+            CommandAction::RefreshSessions => {
+                let _ = self.backend_tx.send(BackendCommand::LoadSessions);
+            }
+            CommandAction::ToggleHelp => {
+                self.help_overlay.toggle_visible();
+            }
+            CommandAction::TogglePerformance => {
+                self.performance_overlay.toggle_visible();
+            }
+            CommandAction::ToggleSubagent => {
+                self.subagent_overlay.toggle_visible();
+            }
+            CommandAction::SwitchFocus => {
+                self.state.next_focus();
+            }
+            CommandAction::Quit => {
+                self.should_quit = true;
+            }
+            CommandAction::ScrollUp => {
+                if let Some(id) = self.state.selected_session_id() {
+                    self.state.scroll_up(id);
+                }
+            }
+            CommandAction::ScrollDown => {
+                if let Some(id) = self.state.selected_session_id() {
+                    self.state.scroll_down(id);
+                }
+            }
+            CommandAction::ClearInput => {
+                self.state.clear_input();
+            }
+            CommandAction::ToggleTheme => {
+                self.theme = self.theme.toggle();
+                self.notifications
+                    .info(format!("主题已切换: {}", self.theme.mode_name()));
+            }
+            CommandAction::ShowMemoryPanel => {
+                self.side_panel.show_memory();
+                let _ = self.backend_tx.send(BackendCommand::LoadMemories);
+            }
+            CommandAction::ShowFilePanel => {
+                self.side_panel.show_files();
+                let _ = self.backend_tx.send(BackendCommand::LoadFiles);
+            }
+        }
+    }
+
     fn handle_app_event(&mut self, event: AppEvent) -> TuiResult<()> {
         match event {
             AppEvent::Quit => {
@@ -285,14 +423,12 @@ impl TuiApp {
                     let index = self.state.selected_index();
                     self.state.select_session(index);
 
-                    // 加载消息
                     if let Some(session_id) = self.state.selected_session_id() {
                         let _ = self
                             .backend_tx
                             .send(BackendCommand::LoadMessages { session_id });
                     }
                 } else if matches!(self.state.focus, FocusArea::InputBox) {
-                    // 在输入框中按Enter = 发送消息
                     if let Some(session_id) = self.state.selected_session_id() {
                         let content = self.state.input.clone();
                         if !content.is_empty() {
@@ -352,7 +488,6 @@ impl TuiApp {
             }
 
             AppEvent::NewSession => {
-                // 只在会话列表焦点时触发
                 if matches!(self.state.focus, FocusArea::SessionList) {
                     let title = format!("会话 {}", chrono::Local::now().format("%m-%d %H:%M"));
                     let _ = self
@@ -362,7 +497,6 @@ impl TuiApp {
             }
 
             AppEvent::DeleteSession => {
-                // 只在会话列表焦点时触发
                 if matches!(self.state.focus, FocusArea::SessionList) {
                     if let Some(session_id) = self.state.selected_session_id() {
                         let _ = self
@@ -373,7 +507,6 @@ impl TuiApp {
             }
 
             AppEvent::Refresh => {
-                // 只在会话列表焦点时触发
                 if matches!(self.state.focus, FocusArea::SessionList) {
                     let _ = self.backend_tx.send(BackendCommand::LoadSessions);
                 }
@@ -383,11 +516,9 @@ impl TuiApp {
         Ok(())
     }
 
-    /// 处理后台更新
     fn handle_backend_update(&mut self, update: BackendUpdate) {
         match update {
             BackendUpdate::SessionsLoaded { sessions } => {
-                // 更新会话列表
                 for session in sessions {
                     self.state
                         .add_session(session.id, session.title.unwrap_or_default());
@@ -398,7 +529,6 @@ impl TuiApp {
                 session_id,
                 messages,
             } => {
-                // 加载消息
                 for msg in messages {
                     self.state.add_message(
                         session_id,
@@ -411,44 +541,76 @@ impl TuiApp {
                 }
             }
 
+            BackendUpdate::StreamingToken { session_id, token } => {
+                self.state.append_streaming_content(session_id, &token);
+                self.state
+                    .set_session_state(session_id, SessionState::Streaming);
+            }
+
             BackendUpdate::ParagraphComplete {
                 session_id,
                 paragraph,
             } => {
-                // 累积段落到缓冲区
                 self.state.append_streaming_content(session_id, &paragraph);
                 self.state
                     .set_session_state(session_id, SessionState::Streaming);
             }
 
             BackendUpdate::ResponseComplete { session_id } => {
-                // 完成流式响应，将缓冲区内容保存为一条消息
                 self.state.finalize_streaming(session_id);
                 self.state.set_session_state(session_id, SessionState::Idle);
                 self.state.scroll_to_bottom(session_id);
+                self.notifications.success("回复已完成");
             }
 
             BackendUpdate::Error { session_id, error } => {
+                self.notifications.error(&error);
                 self.state
                     .set_session_state(session_id, SessionState::Error(error));
+            }
+
+            BackendUpdate::MemoriesLoaded { memories } => {
+                let entries = memories
+                    .into_iter()
+                    .map(|m| crate::ui::side_panel::MemoryEntry {
+                        id: m.id,
+                        memory_type: m.memory_type,
+                        content: m.content,
+                    })
+                    .collect();
+                self.side_panel.set_memories(entries);
+            }
+
+            BackendUpdate::FilesLoaded { files } => {
+                let entries = files
+                    .into_iter()
+                    .map(|f| crate::ui::side_panel::FileEntry {
+                        id: f.id,
+                        filename: f.filename,
+                        size_display: f.size_display,
+                        access_level: f.access_level,
+                    })
+                    .collect();
+                self.side_panel.set_files(entries);
             }
         }
     }
 
-    /// Get mutable reference to subagent overlay
     pub fn subagent_overlay_mut(&mut self) -> &mut SubagentOverlay {
         &mut self.subagent_overlay
     }
 
-    /// Get current session ID (for setting overlay context)
     pub fn current_session_id(&self) -> Option<uuid::Uuid> {
         self.state.selected_session_id()
+    }
+
+    pub fn theme(&self) -> &Theme {
+        &self.theme
     }
 }
 
 impl Drop for TuiApp {
     fn drop(&mut self) {
-        // 清理终端
         let _ = disable_raw_mode();
         let _ = self.terminal.backend_mut().execute(LeaveAlternateScreen);
     }

@@ -247,6 +247,14 @@ async fn run_backend(
                     }
                 }
             }
+
+            BackendCommand::LoadMemories => {
+                let _ = update_tx.send(BackendUpdate::MemoriesLoaded { memories: vec![] });
+            }
+
+            BackendCommand::LoadFiles => {
+                let _ = update_tx.send(BackendUpdate::FilesLoaded { files: vec![] });
+            }
         }
     }
 }

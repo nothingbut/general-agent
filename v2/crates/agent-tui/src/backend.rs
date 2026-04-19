@@ -5,7 +5,10 @@ use uuid::Uuid;
 /// 后台更新（Backend → UI）
 #[derive(Debug, Clone)]
 pub enum BackendUpdate {
-    /// 段落完成（逐段显示）
+    /// 流式 token（逐字显示）
+    StreamingToken { session_id: Uuid, token: String },
+
+    /// 段落完成（逐段显示，兼容非流式）
     ParagraphComplete { session_id: Uuid, paragraph: String },
 
     /// 响应完成
@@ -22,6 +25,12 @@ pub enum BackendUpdate {
         session_id: Uuid,
         messages: Vec<MessageInfo>,
     },
+
+    /// 记忆列表加载完成
+    MemoriesLoaded { memories: Vec<MemoryInfo> },
+
+    /// 文件列表加载完成
+    FilesLoaded { files: Vec<FileInfo> },
 }
 
 /// 后台命令（UI → Backend）
@@ -41,6 +50,12 @@ pub enum BackendCommand {
 
     /// 加载消息
     LoadMessages { session_id: Uuid },
+
+    /// 加载记忆列表
+    LoadMemories,
+
+    /// 加载文件列表
+    LoadFiles,
 }
 
 /// 会话信息
@@ -57,4 +72,21 @@ pub struct MessageInfo {
     pub role: String,
     pub content: String,
     pub timestamp: chrono::DateTime<chrono::Utc>,
+}
+
+/// 记忆信息
+#[derive(Debug, Clone)]
+pub struct MemoryInfo {
+    pub id: String,
+    pub memory_type: String,
+    pub content: String,
+}
+
+/// 文件信息
+#[derive(Debug, Clone)]
+pub struct FileInfo {
+    pub id: String,
+    pub filename: String,
+    pub size_display: String,
+    pub access_level: String,
 }

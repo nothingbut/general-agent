@@ -4,12 +4,15 @@
 
 pub mod app;
 pub mod backend;
+pub mod backend_runner;
 pub mod event;
 pub mod state;
 pub mod ui;
 
 pub use app::TuiApp;
+pub use backend_runner::BackendRunner;
 pub use state::{AppState, FocusArea, MessageItem, SessionItem, SessionState};
+pub use ui::{CommandPalette, SidePanel, Theme};
 
 /// TUI 错误类型
 #[derive(Debug, thiserror::Error)]
