@@ -10,6 +10,9 @@ members = [
     "crates/agent-api",
     "crates/agent-tui",
     "crates/agent-cli",
+    "crates/agent-context-compression",
+    "crates/agent-memory", "crates/agent-file-storage", "crates/agent-skill-extraction", "crates/agent-scheduled-tasks",
+    "crates/agent-multi-agent",
 ]
 resolver = "2"
 

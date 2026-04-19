@@ -49,3 +49,7 @@ v2/Cargo.lock
 **/obj/
 *.user
 *.suo
+
+# Graphify output
+graphify-out/
+**/graphify-out/

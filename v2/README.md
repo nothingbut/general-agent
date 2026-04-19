@@ -216,12 +216,19 @@ agent chat <session-id> --stream
 
 ## 📚 文档
 
+### 用户指南
 - [文档索引](docs/README.md) - 完整文档导航
 - [架构设计](docs/ARCHITECTURE.md) - 详细的架构说明
 - [技能系统](docs/SKILLS.md) - 技能系统使用指南
 - [API 文档](docs/api/api-reference.md) - 公共 API 文档
 - [部署指南](docs/DEPLOYMENT.md) - 生产环境部署
-- [Phase 2 路线图](docs/plans/v2-phase2-roadmap.md) - 后续计划
+
+### 规划文档（2026-04-15 更新）
+- [V2 规划总结](docs/V2_PLANNING_SUMMARY.md) - **新增** 📋
+- [V2 vs V3 功能差距分析](docs/V2_VS_V3_GAP_ANALYSIS.md) - **新增** 🔍
+- [V2 发展路线图 2026](docs/V2_ROADMAP_2026.md) - **新增** 🗺️
+- [上下文压缩实施计划](docs/plans/context-compression-implementation-plan.md) - **新增** 📝
+- [Phase 2 路线图](docs/plans/v2-phase2-roadmap.md) - 进行中
 
 ---
 
@@ -318,17 +325,17 @@ cargo clippy
 - ✅ CLI 工具
 - ✅ 单元测试
 
-### 🚧 Phase 2: 功能扩展（进行中）
+### ✅ Phase 2: 功能扩展（已完成 - 2026-03-11）
 - ✅ Stage 1: 集成测试（46 个测试）
-- 🔄 Stage 2: 文档完善（进行中）
-- ⏳ Stage 3: TUI 界面（Ratatui）
-- ✅ Stage 4: MCP 集成（已完成 - 2026-03-11）
+- ✅ Stage 2: 文档完善
+- ⏳ Stage 3: TUI 界面（计划中 - Week 10-11）
+- ✅ Stage 4: MCP 集成
   - ✅ JSON-RPC 协议实现
   - ✅ Stdio 传输层
   - ✅ MCP 客户端
   - ✅ ConversationFlow 集成
   - ✅ 6 个集成测试
-- ✅ Stage 5: RAG 系统（已完成 - 2026-03-11）
+- ✅ Stage 5: RAG 系统
   - ✅ 文档加载器（Markdown）
   - ✅ 文本分块器
   - ✅ Ollama Embedding（768维）
@@ -337,11 +344,52 @@ cargo clippy
   - ✅ ConversationFlow 集成
   - ✅ 10 个测试（6 个集成测试）
 
-### 📅 Phase 3: 生态扩展（计划中）
-- ⏸️ Web API 服务
-- ⏸️ 工作流系统
-- ⏸️ 多 Agent 协作
-- ⏸️ 插件系统
+### 🚧 Phase 3: V3 功能对齐（2026-04-15 至 2026-05-24，32 天）
+**目标**: 实现 V3 的 5 个优先功能
+
+- ⏳ **Week 1-2**: 上下文压缩系统（5 天）
+  - Token 计数（tiktoken-rs）
+  - 滑动窗口策略
+  - 语义压缩策略
+  - 分层压缩策略
+  - 自动触发机制
+  
+- ⏳ **Week 3-4**: 长期记忆系统（8 天）
+  - 5 种记忆类型（User/Feedback/Project/Reference/Knowledge）
+  - LLM 驱动提取
+  - 向量化（复用 RAG 的 Qdrant + Embedding）
+  - 语义搜索和混合搜索
+  
+- ⏳ **Week 5-6**: 文件上传系统（8 天）
+  - 文件上传/列表/删除
+  - 对话引用（`@file:` 语法）
+  - 跨会话访问
+  - 三级权限（Private/Shared/Public）
+  - 版本控制
+  
+- ⏳ **Week 7**: 技能抽取系统（4 天）
+  - LLM 驱动的技能定义生成
+  - 交互式编辑和确认
+  - 抽取历史记录
+  
+- ⏳ **Week 8-9**: 计划任务系统（5 天）
+  - Cron 表达式支持
+  - 自然语言支持（中文）
+  - 3 种任务类型（技能调用/记忆提醒/自定义命令）
+  - 后台调度器
+  - 重试机制
+
+**详细规划**: 参见 [V2 发展路线图 2026](docs/V2_ROADMAP_2026.md)
+
+### 📅 Phase 4: V2 独特优势建设（2026-05-25 至 2026-07-26，9 周）
+- ⏳ **Week 10-11**: TUI 界面（Ratatui）
+- ⏳ **Week 12-15**: Web API 服务（Axum + WebSocket）
+- ⏳ **Week 16-18**: 多 Agent 协作
+
+### 📅 Phase 5: 生态建设（Q4 2026）
+- ⏳ 插件系统（WASM）
+- ⏳ 企业级功能（多租户、审计日志、RBAC）
+- ⏳ 社区驱动（开源发布、文档网站）
 
 ---
 
