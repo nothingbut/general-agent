@@ -26,7 +26,45 @@ colima start
 docker run -d --name qdrant -p 6333:6333 -p 6334:6334 qdrant/qdrant
 ```
 
-### 2. 环境变量
+### 2. 配置文件
+
+项目根目录的 `agent.toml` 集中管理所有默认配置，各 crate 通过 `agent_core::config::defaults` 引用。
+修改此文件和对应常量即可全局生效，无需逐个修改各 crate 的硬编码值。
+
+```toml
+# v2/agent.toml
+[ollama]
+model = "qwen2.5:7b-instruct"
+base_url = "http://localhost:11434"
+
+[anthropic]
+model = "claude-3-5-sonnet-20241022"
+
+[llm]
+provider = "ollama"
+max_tokens = 2048
+temperature = 0.5
+
+[subagent.simple]
+model = "qwen2.5:7b-instruct"
+max_tokens = 1024
+temperature = 0.3
+
+[subagent.medium]
+model = "qwen2.5:7b-instruct"
+max_tokens = 2048
+temperature = 0.5
+
+[subagent.complex]
+provider = "anthropic"
+model = "claude-3-5-sonnet-20241022"
+max_tokens = 4096
+temperature = 0.7
+```
+
+### 3. 环境变量
+
+环境变量可覆盖配置文件中的默认值：
 
 ```bash
 export AGENT_DB=./test_agent.db
@@ -34,6 +72,8 @@ export AGENT_PROVIDER=ollama
 export OLLAMA_MODEL=qwen2.5:7b-instruct
 export OLLAMA_BASE_URL=http://localhost:11434
 ```
+
+> **优先级**: 环境变量 > CLI 参数默认值 > `agent.toml` > `agent_core::config::defaults` 编译时常量
 
 ---
 

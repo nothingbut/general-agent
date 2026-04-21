@@ -51,7 +51,7 @@ cargo build --release
 
 ```bash
 # 1. 启动 Ollama（使用本地模型）
-ollama pull qwen3.5:0.8b
+ollama pull qwen2.5:7b-instruct
 ollama serve
 
 # 2. 创建新会话
@@ -234,28 +234,59 @@ agent chat <session-id> --stream
 
 ## 🔧 配置
 
+### 配置文件（agent.toml）
+
+项目根目录的 `agent.toml` 集中管理所有默认配置。代码中通过 `agent_core::config::defaults` 常量引用，修改一处全局生效。
+
+```toml
+[ollama]
+model = "qwen2.5:7b-instruct"
+base_url = "http://localhost:11434"
+
+[anthropic]
+model = "claude-3-5-sonnet-20241022"
+
+[llm]
+provider = "ollama"
+max_tokens = 2048
+temperature = 0.5
+
+[subagent.simple]
+model = "qwen2.5:7b-instruct"
+max_tokens = 1024
+temperature = 0.3
+
+[subagent.medium]
+model = "qwen2.5:7b-instruct"
+max_tokens = 2048
+temperature = 0.5
+
+[subagent.complex]
+provider = "anthropic"
+model = "claude-3-5-sonnet-20241022"
+max_tokens = 4096
+temperature = 0.7
+```
+
 ### 环境变量
 
+环境变量可覆盖配置文件中的默认值：
+
 ```bash
-# 数据库路径
 export AGENT_DB=./agent.db
-
-# LLM 提供商（anthropic/ollama）
 export AGENT_PROVIDER=ollama
-
-# Anthropic API Key
 export ANTHROPIC_API_KEY=sk-ant-xxx
-
-# Ollama 配置
-export OLLAMA_MODEL=qwen3.5:0.8b
+export OLLAMA_MODEL=qwen2.5:7b-instruct
 export OLLAMA_BASE_URL=http://localhost:11434
 ```
+
+> **优先级**: 环境变量 > CLI 参数默认值 > `agent.toml` > `agent_core::config::defaults` 编译时常量
 
 ### 命令行参数
 
 ```bash
 agent --help
-agent --provider ollama --ollama-model qwen2.5:0.5b chat <id>
+agent --provider ollama --ollama-model qwen2.5:7b-instruct chat <id>
 agent --skills-dir ./skills chat <id>
 ```
 
@@ -462,7 +493,7 @@ chore: 构建/工具相关
 - ✅ CLI 工具（5 个命令）
 
 **优化**
-- 🚀 默认模型更新为 qwen3.5:0.8b
+- 🚀 默认模型更新为 qwen2.5:7b-instruct
 - 📈 测试覆盖率 > 80%
 - 📚 完整文档
 
