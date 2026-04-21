@@ -73,10 +73,11 @@ fn test_task_complexity_select_llm_config_simple() {
     let complexity = TaskComplexity::Simple;
     let config = complexity.select_llm_config();
 
-    assert_eq!(config.provider, "ollama");
-    assert_eq!(config.model, "qwen2.5:0.5b");
-    assert_eq!(config.max_tokens, 1024);
-    assert_eq!(config.temperature, 0.3);
+    use agent_core::config::defaults::subagent;
+    assert_eq!(config.provider, agent_core::config::defaults::OLLAMA_PROVIDER);
+    assert_eq!(config.model, subagent::SIMPLE_MODEL);
+    assert_eq!(config.max_tokens, subagent::SIMPLE_MAX_TOKENS);
+    assert_eq!(config.temperature, subagent::SIMPLE_TEMPERATURE);
 }
 
 #[test]
@@ -84,10 +85,11 @@ fn test_task_complexity_select_llm_config_medium() {
     let complexity = TaskComplexity::Medium;
     let config = complexity.select_llm_config();
 
-    assert_eq!(config.provider, "ollama");
-    assert_eq!(config.model, "qwen2.5:7b");
-    assert_eq!(config.max_tokens, 2048);
-    assert_eq!(config.temperature, 0.5);
+    use agent_core::config::defaults::subagent;
+    assert_eq!(config.provider, agent_core::config::defaults::OLLAMA_PROVIDER);
+    assert_eq!(config.model, subagent::MEDIUM_MODEL);
+    assert_eq!(config.max_tokens, subagent::MEDIUM_MAX_TOKENS);
+    assert_eq!(config.temperature, subagent::MEDIUM_TEMPERATURE);
 }
 
 #[test]

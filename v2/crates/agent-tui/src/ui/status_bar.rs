@@ -21,7 +21,10 @@ pub fn render_status_bar(f: &mut Frame, area: Rect, _state: &AppState) {
                 .add_modifier(Modifier::BOLD),
         ),
         Span::raw(" | "),
-        Span::styled("Ollama (qwen3.5)", Style::default().fg(AppColors::SELECTED)),
+        Span::styled(
+            format!("Ollama ({})", agent_core::config::defaults::OLLAMA_MODEL),
+            Style::default().fg(AppColors::SELECTED),
+        ),
         Span::raw("  "),
         Span::styled(
             "Ctrl+H 帮助",

@@ -33,7 +33,7 @@ pub struct OllamaConfig {
 impl Default for OllamaConfig {
     fn default() -> Self {
         Self {
-            base_url: "http://localhost:11434".to_string(),
+            base_url: agent_core::config::defaults::OLLAMA_BASE_URL.to_string(),
             model: "nomic-embed-text".to_string(),
             dimension: 768,
         }

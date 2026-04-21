@@ -40,24 +40,25 @@ impl TaskComplexity {
 
     /// Select LLM configuration based on complexity
     pub fn select_llm_config(&self) -> LLMConfig {
+        use agent_core::config::defaults::{self, subagent};
         match self {
             Self::Simple => LLMConfig {
-                provider: "ollama".to_string(),
-                model: "qwen2.5:0.5b".to_string(),
-                max_tokens: 1024,
-                temperature: 0.3,
+                provider: defaults::OLLAMA_PROVIDER.to_string(),
+                model: subagent::SIMPLE_MODEL.to_string(),
+                max_tokens: subagent::SIMPLE_MAX_TOKENS,
+                temperature: subagent::SIMPLE_TEMPERATURE,
             },
             Self::Medium => LLMConfig {
-                provider: "ollama".to_string(),
-                model: "qwen2.5:7b".to_string(),
-                max_tokens: 2048,
-                temperature: 0.5,
+                provider: defaults::OLLAMA_PROVIDER.to_string(),
+                model: subagent::MEDIUM_MODEL.to_string(),
+                max_tokens: subagent::MEDIUM_MAX_TOKENS,
+                temperature: subagent::MEDIUM_TEMPERATURE,
             },
             Self::Complex => LLMConfig {
-                provider: "anthropic".to_string(),
-                model: "claude-3-5-sonnet-20241022".to_string(),
-                max_tokens: 4096,
-                temperature: 0.7,
+                provider: defaults::ANTHROPIC_PROVIDER.to_string(),
+                model: subagent::COMPLEX_MODEL.to_string(),
+                max_tokens: subagent::COMPLEX_MAX_TOKENS,
+                temperature: subagent::COMPLEX_TEMPERATURE,
             },
             Self::Custom(config) => config.clone(),
         }
@@ -121,11 +122,12 @@ impl LLMConfig {
 
 impl Default for LLMConfig {
     fn default() -> Self {
+        use agent_core::config::defaults;
         Self {
-            provider: "ollama".to_string(),
-            model: "qwen2.5:7b".to_string(),
-            max_tokens: 2048,
-            temperature: 0.5,
+            provider: defaults::OLLAMA_PROVIDER.to_string(),
+            model: defaults::OLLAMA_MODEL.to_string(),
+            max_tokens: defaults::LLM_MAX_TOKENS,
+            temperature: defaults::LLM_TEMPERATURE,
         }
     }
 }

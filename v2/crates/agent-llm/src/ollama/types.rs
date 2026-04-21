@@ -10,9 +10,10 @@ pub struct OllamaConfig {
 
 impl Default for OllamaConfig {
     fn default() -> Self {
+        use agent_core::config::defaults;
         Self {
-            base_url: "http://localhost:11434".to_string(),
-            model: "qwen2.5:0.5b".to_string(),
+            base_url: defaults::OLLAMA_BASE_URL.to_string(),
+            model: defaults::OLLAMA_MODEL.to_string(),
         }
     }
 }

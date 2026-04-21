@@ -1,0 +1,30 @@
+# General Agent V2 配置文件
+# 此文件定义所有默认值，可通过环境变量覆盖
+
+[ollama]
+model = "qwen2.5:7b-instruct"
+base_url = "http://localhost:11434"
+
+[anthropic]
+model = "claude-3-5-sonnet-20241022"
+
+[llm]
+provider = "ollama"
+max_tokens = 2048
+temperature = 0.5
+
+[subagent.simple]
+model = "qwen2.5:7b-instruct"
+max_tokens = 1024
+temperature = 0.3
+
+[subagent.medium]
+model = "qwen2.5:7b-instruct"
+max_tokens = 2048
+temperature = 0.5
+
+[subagent.complex]
+provider = "anthropic"
+model = "claude-3-5-sonnet-20241022"
+max_tokens = 4096
+temperature = 0.7

@@ -54,7 +54,17 @@ cargo build --workspace
 cargo build --release --workspace
 ```
 
-**预期**: 编译成功，产出二进制文件
+**预期**: 编译成功，产出二进制文件 `v2/target/release/agent`
+
+### 1.2.1 设置命令别名（后续步骤使用）
+
+```bash
+# 方式一：创建别名（临时）
+alias agent=./target/release/agent
+
+# 方式二：复制到 PATH（永久）
+cp ./target/release/agent /usr/local/bin/agent
+```
 
 ### 1.3 代码质量检查
 
@@ -116,24 +126,24 @@ cargo test --package agent-multi-agent -- --nocapture
 
 ## 第三部分：CLI 功能验收
 
+> CLI 使用扁平子命令格式（如 `memory-list`），不是嵌套格式。
+> 运行 `agent --help` 查看完整命令列表。
+
 ### 3.1 基础会话管理
 
 ```bash
 # 查看帮助
-cargo run --package agent-cli -- --help
+agent --help
 
 # 创建会话
-cargo run --package agent-cli -- new --title "验收测试会话"
+agent new --title "验收测试会话"
 # 记录输出的 session-id
 
 # 列出会话
-cargo run --package agent-cli -- list
-
-# 查看会话详情
-cargo run --package agent-cli -- show <session-id>
+agent list
 
 # 删除会话
-cargo run --package agent-cli -- delete <session-id>
+agent delete <session-id>
 ```
 
 **预期**: 各命令正确输出，无 panic
@@ -142,16 +152,16 @@ cargo run --package agent-cli -- delete <session-id>
 
 ```bash
 # 添加记忆
-cargo run --package agent-cli -- memory add user "我是一名 Rust 开发者"
+agent memory-add -t user "我是一名 Rust 开发者"
 
 # 列出记忆
-cargo run --package agent-cli -- memory list
+agent memory-list
 
-# 搜索记忆
-cargo run --package agent-cli -- memory search "Rust"
+# 关键词搜索记忆
+agent memory-search "Rust"
 
 # 查看统计
-cargo run --package agent-cli -- memory stats
+agent memory-stats
 ```
 
 **预期**: 记忆正确创建、列出、搜索
@@ -161,44 +171,47 @@ cargo run --package agent-cli -- memory stats
 ```bash
 # 上传文件
 echo "Hello World" > /tmp/test_upload.txt
-cargo run --package agent-cli -- file upload /tmp/test_upload.txt
+agent file-upload /tmp/test_upload.txt
 
 # 列出文件
-cargo run --package agent-cli -- file list
+agent file-list
 
 # 查看文件详情
-cargo run --package agent-cli -- file show <file-id>
+agent file-show <file-id>
 
 # 查看存储统计
-cargo run --package agent-cli -- file stats
+agent file-stats
 ```
 
 **预期**: 文件正确上传、列出、访问
 
-### 3.4 技能系统
+### 3.4 技能抽取
 
 ```bash
-# 列出技能
-cargo run --package agent-cli -- skill list
+# 查看抽取历史
+agent skill-history
 
-# 查看技能详情（如果有内置技能）
-cargo run --package agent-cli -- skill show <skill-name>
+# 查看抽取统计
+agent skill-stats
 ```
 
 ### 3.5 计划任务
 
 ```bash
 # 创建计划任务
-cargo run --package agent-cli -- task schedule "每日总结" \
+agent task-create "每日总结" \
   --schedule "0 9 * * *" \
-  --type custom-command \
-  --payload '{"command": "echo hello"}'
+  -t command \
+  --payload "echo hello"
 
 # 列出任务
-cargo run --package agent-cli -- task list
+agent task-list
 
 # 查看任务详情
-cargo run --package agent-cli -- task show <task-id>
+agent task-show <task-id>
+
+# 查看任务统计
+agent task-stats
 ```
 
 **预期**: 任务正确创建和管理
@@ -207,13 +220,16 @@ cargo run --package agent-cli -- task show <task-id>
 
 ## 第四部分：Web API 验收
 
-### 4.1 启动 API 服务
+> 注意：`agent-api` 是库 crate，无独立二进制。API 端点通过自动化测试验证。
+> 以下 curl 命令仅供未来集成 `serve` 子命令后使用。
+
+### 4.1 API 自动化测试
 
 ```bash
-cargo run --package agent-cli -- serve --port 3000
+cargo test --package agent-api
 ```
 
-**预期**: 服务启动，监听 0.0.0.0:3000
+**预期**: 所有 API 测试通过（路由、DTO 序列化、状态码）
 
 ### 4.2 健康检查
 
@@ -381,18 +397,14 @@ cargo test --workspace 2>&1 | grep "test result:" | \
 | 类别 | 检查项 | 通过 |
 |------|--------|------|
 | **编译** | workspace 全量编译通过 | ☐ |
-| **编译** | release 编译通过 | ☐ |
+| **编译** | release 编译通过，产出 `agent` 二进制 | ☐ |
 | **测试** | 844+ 测试全部通过 | ☐ |
 | **测试** | multi-agent 23 个测试全部通过 | ☐ |
-| **CLI** | 会话 CRUD 正常 | ☐ |
-| **CLI** | 记忆系统正常 | ☐ |
-| **CLI** | 文件存储正常 | ☐ |
-| **CLI** | 计划任务正常 | ☐ |
-| **API** | 服务启动正常 | ☐ |
-| **API** | Swagger UI 可访问 | ☐ |
-| **API** | 会话/记忆/文件端点正常 | ☐ |
-| **API** | 多 Agent 列表端点正常 | ☐ |
-| **API** | 多 Agent 协作端点正常 | ☐ |
+| **CLI** | `agent new` / `agent list` / `agent delete` 正常 | ☐ |
+| **CLI** | `agent memory-add` / `memory-list` / `memory-search` / `memory-stats` 正常 | ☐ |
+| **CLI** | `agent file-upload` / `file-list` / `file-show` / `file-stats` 正常 | ☐ |
+| **CLI** | `agent task-create` / `task-list` / `task-show` / `task-stats` 正常 | ☐ |
+| **API** | `cargo test --package agent-api` 全部通过 | ☐ |
 | **架构** | 16 crate workspace 完整 | ☐ |
 | **架构** | feature flag 可选性正确 | ☐ |
 
@@ -407,4 +419,4 @@ cargo test --workspace 2>&1 | grep "test result:" | \
 
 ---
 
-**最后更新**: 2026-04-19
+**最后更新**: 2026-04-20

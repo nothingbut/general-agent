@@ -78,7 +78,7 @@ impl AgentRuntime {
 
         #[cfg(feature = "multi-agent")]
         let multi_agent_service = {
-            let model = "qwen2.5:7b".to_string();
+            let model = agent_core::config::defaults::OLLAMA_MODEL.to_string();
             let service = crate::MultiAgentService::new(llm_client.clone(), model);
             match service.register_default_agents() {
                 Ok(()) => {

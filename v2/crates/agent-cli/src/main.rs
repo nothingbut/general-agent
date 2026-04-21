@@ -45,7 +45,7 @@ struct Cli {
     db_path: String,
 
     /// LLM 提供商 (anthropic/ollama)
-    #[arg(long, env = "AGENT_PROVIDER", default_value = "ollama")]
+    #[arg(long, env = "AGENT_PROVIDER", default_value = agent_core::config::defaults::OLLAMA_PROVIDER)]
     provider: String,
 
     /// API Key (仅 anthropic 需要)
@@ -53,11 +53,11 @@ struct Cli {
     api_key: Option<String>,
 
     /// Ollama 模型名称
-    #[arg(long, env = "OLLAMA_MODEL", default_value = "qwen3.5:0.8b")]
+    #[arg(long, env = "OLLAMA_MODEL", default_value = agent_core::config::defaults::OLLAMA_MODEL)]
     ollama_model: String,
 
     /// Ollama 服务地址
-    #[arg(long, env = "OLLAMA_BASE_URL", default_value = "http://localhost:11434")]
+    #[arg(long, env = "OLLAMA_BASE_URL", default_value = agent_core::config::defaults::OLLAMA_BASE_URL)]
     ollama_url: String,
 
     /// 技能文件目录（可选）

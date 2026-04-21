@@ -33,8 +33,7 @@ async fn main() -> Result<()> {
     let session_manager = Arc::new(SessionManager::new(session_repo, message_repo));
 
     // 创建 LLM 客户端
-    let config = agent_llm::ollama::OllamaConfig::new("qwen3.5:0.8b".to_string())
-        .with_base_url("http://localhost:11434".to_string());
+    let config = agent_llm::ollama::OllamaConfig::default();
     let llm_client: Arc<dyn LLMClient> = Arc::new(OllamaClient::new(config)?);
 
     // 加载技能系统
